@@ -152,7 +152,16 @@ npm run build
 
 ---
 
+## Documentation & Engineering Guides
+
+- **[Mixed Reality Full-Body Anatomy Tracking & Classroom Projection Guide](docs/MIXED_REALITY_FULL_BODY_AR_GUIDE.md)**: Mathematical transformation matrix derivation, kinematic grouping, projector-camera calibration (homography), and step-by-step roadmap for projecting real BodyParts3D visceral organs onto professors and students in lecture halls.
+
+---
+
 ## Credits & Dataset License
 
-- **3D Anatomical Data**: **BodyParts3D 4.0** (c) The Database Center for Life Science (DBCLS), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **3D Anatomical Data**: **BodyParts3D 4.0** © The Database Center for Life Science (DBCLS), licensed under [CC BY-SA 2.1 JP](https://creativecommons.org/licenses/by-sa/2.1/jp/) (see [DBCLS License Policy](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)).
+- **Atlas Pipeline**: Batched geometry pipeline inspired by [ashemag/human-atlas](https://github.com/ashemag/human-atlas) (MIT License).
+- **Computer Vision & AR Tracking**: [Google MediaPipe](https://developers.google.com/mediapipe) (FaceMesh, Hands, Pose; Apache 2.0).
+- **3D Graphics & WebXR Engine**: [Three.js](https://threejs.org/) (MIT License).
 - **Notice**: This software is designed exclusively for educational, study, and research purposes and is not intended for diagnostic or medical treatment procedures.
