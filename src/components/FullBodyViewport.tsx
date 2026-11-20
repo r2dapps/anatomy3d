@@ -293,7 +293,7 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           antialias: budget.antialias,
           alpha: false,
           powerPreference: 'high-performance',
-          preserveDrawingBuffer: true,
+          preserveDrawingBuffer: false,
         });
       } catch {
         callbacksRef.current.onError(

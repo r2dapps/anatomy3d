@@ -387,10 +387,13 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
     let stream: MediaStream | null = null;
     let rafId = 0;
     let renderer: THREE.WebGLRenderer | null = null;
+    let cleanupResize: (() => void) | null = null;
     const materials: THREE.ShaderMaterial[] = [];
 
     const cleanup = () => {
       if (rafId) cancelAnimationFrame(rafId);
+      cleanupResize?.();
+      cleanupResize = null;
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
         stream = null;
@@ -534,9 +537,15 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         );
       } catch {}
 
+      const isMobile =
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (container.clientWidth || window.innerWidth) < 768;
+      const dpr = isMobile
+        ? Math.min(window.devicePixelRatio || 1, 1.25)
+        : Math.min(window.devicePixelRatio || 1, 1.75);
+
       let Cw = container.clientWidth || window.innerWidth;
       let Ch = container.clientHeight || window.innerHeight;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
       glCanvas.width = Math.round(Cw * dpr);
       glCanvas.height = Math.round(Ch * dpr);
@@ -546,8 +555,9 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       renderer = new THREE.WebGLRenderer({
         canvas: glCanvas,
         alpha: true,
-        antialias: true,
-        preserveDrawingBuffer: true,
+        antialias: !isMobile,
+        powerPreference: 'high-performance',
+        preserveDrawingBuffer: false,
       });
       renderer.autoClear = false;
       renderer.setClearColor(0x000000, 0);
@@ -695,11 +705,35 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       const XD = new THREE.Vector3();
       const YD = new THREE.Vector3();
 
+      // Zero-allocation scratch objects hoisted outside renderLoop to eliminate GC hitches
+      const UP_AXIS = new THREE.Vector3(0, 1, 0);
+      const scratchPv = new THREE.Vector3();
+      const scratchRr = new THREE.Vector3();
+      const scratchP0 = new THREE.Vector3();
+      const scratchN = new THREE.Vector3();
+      const scratchTorsoPos = new THREE.Vector3();
+      const scratchTorsoRot = new THREE.Euler();
+      const scratchTorsoQuat = new THREE.Quaternion();
+      const scratchTorsoScale = new THREE.Vector3();
+      const scratchBonePos = new THREE.Vector3();
+      const scratchA = new THREE.Vector3();
+      const scratchU = new THREE.Vector3();
+      const scratchSd = new THREE.Vector3();
+      const scratchNorm = new THREE.Vector3();
+      const scratchV1 = new THREE.Vector3();
+      const scratchV2 = new THREE.Vector3();
+      const handPoints: [THREE.Vector3[], THREE.Vector3[]] = [
+        Array.from({ length: 21 }, () => new THREE.Vector3()),
+        Array.from({ length: 21 }, () => new THREE.Vector3()),
+      ];
+
       let havePose = false;
       let faceOn = false;
       let miss = 0;
       let jawSmooth = 0;
       let lastVideoTime = -1;
+      let lastInferenceTime = 0;
+      const INFERENCE_INTERVAL_MS = isMobile ? 32 : 24;
       let handsP: { p: number[][]; right: boolean }[] = [];
       let prevLook: 'xray' | 'solid' = settingsRef.current.look;
 
@@ -726,12 +760,21 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         [17, 18, 19, 20],
       ];
 
+      // Cached projection coordinates - updated only on window resize / orientation change
+      let covScale = 1;
+      let Rw = 1280;
+      let Rh = 720;
+      let Ox = 0;
+      let Oy = 0;
+
       // Exact mathematical alignment between video object-fit: cover and WebGL camera
       const updateDimensions = () => {
         if (!container || !video || !renderer) return;
         const curCw = container.clientWidth || window.innerWidth;
         const curCh = container.clientHeight || window.innerHeight;
-        const curDpr = Math.min(window.devicePixelRatio || 1, 2);
+        const curDpr = isMobile
+          ? Math.min(window.devicePixelRatio || 1, 1.25)
+          : Math.min(window.devicePixelRatio || 1, 1.75);
 
         if (curCw !== Cw || curCh !== Ch) {
           Cw = curCw;
@@ -746,8 +789,11 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
         const Vw = video.videoWidth || 1280;
         const Vh = video.videoHeight || 720;
-        const scale = Math.max(Cw / Vw, Ch / Vh);
-        const Rh = Vh * scale;
+        covScale = Math.max(Cw / Vw, Ch / Vh);
+        Rw = Vw * covScale;
+        Rh = Vh * covScale;
+        Ox = (Cw - Rw) / 2;
+        Oy = (Ch - Rh) / 2;
 
         // Effective FOV accounting for object-cover crop
         const nominalFovRad = (63 * Math.PI) / 180;
@@ -763,7 +809,15 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         camO.updateProjectionMatrix();
       };
 
+      updateDimensions();
       window.addEventListener('resize', updateDimensions);
+      const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateDimensions) : null;
+      resizeObserver?.observe(container);
+
+      cleanupResize = () => {
+        window.removeEventListener('resize', updateDimensions);
+        resizeObserver?.disconnect();
+      };
 
       const applyLookMode = (mode: 'xray' | 'solid') => {
         const isX = mode === 'xray';
@@ -787,18 +841,14 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           applyLookMode(cfg.look);
         }
 
-        updateDimensions();
-
-        const Vw = video.videoWidth || 1280;
-        const Vh = video.videoHeight || 720;
-        const covScale = Math.max(Cw / Vw, Ch / Vh);
-        const Rw = Vw * covScale;
-        const Rh = Vh * covScale;
-        const Ox = (Cw - Rw) / 2;
-        const Oy = (Ch - Rh) / 2;
-
-        if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+        // Throttled neural inference matching video fps; WebGL animation/lerp runs at silky 60 FPS
+        if (
+          video.readyState >= 2 &&
+          video.currentTime !== lastVideoTime &&
+          now - lastInferenceTime >= INFERENCE_INTERVAL_MS
+        ) {
           lastVideoTime = video.currentTime;
+          lastInferenceTime = now;
 
           let mx: { data: number[] } | undefined = undefined;
           if (faceLandmarker) {
@@ -901,7 +951,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             const earDx = rEar.x - lEar.x;
             const earDz = rEar.z - lEar.z;
             const yaw = Math.atan2(earDz, Math.max(1, earDx)) * 0.5;
-            qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            qq.setFromAxisAngle(UP_AXIS, yaw);
             ss.set(headScale, headScale, headScale);
 
             if (!havePose) {
@@ -959,8 +1009,8 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         let tip = tip0;
         const R = cfg.lensSize * Ch;
         if (isLens && !tip && faceOn) {
-          const pv = new THREE.Vector3().setFromMatrixPosition(Msm).project(camP);
-          tip = [((pv.x + 1) / 2) * Cw, ((-pv.y + 1) / 2) * Ch];
+          scratchPv.setFromMatrixPosition(Msm).project(camP);
+          tip = [((scratchPv.x + 1) / 2) * Cw, ((-scratchPv.y + 1) / 2) * Ch];
         } else if (isLens && !tip && poseOn && smoothPose[20].v > 0.4) {
           tip = [smoothPose[20].x, smoothPose[20].y];
         }
@@ -982,23 +1032,29 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           YD.set(0, 1, 0).transformDirection(HM);
 
           const sx = XD.x * (isMirror ? -1 : 1) > 0 ? 1 : -1;
-          const Rr = XD.clone().multiplyScalar(sx);
+          scratchRr.copy(XD).multiplyScalar(sx);
           const k = sS.x;
-          let n: THREE.Vector3 | null = null;
-          const p0 = O.clone();
+          let hasClip = false;
+          scratchP0.copy(O);
 
-          if (cfg.reveal === 'left') n = Rr.clone().negate();
-          else if (cfg.reveal === 'right') n = Rr.clone();
-          else if (cfg.reveal === 'top') {
-            n = YD.clone();
-            p0.addScaledVector(YD, PLANE_EYE_Y * k);
+          if (cfg.reveal === 'left') {
+            scratchN.copy(scratchRr).negate();
+            hasClip = true;
+          } else if (cfg.reveal === 'right') {
+            scratchN.copy(scratchRr);
+            hasClip = true;
+          } else if (cfg.reveal === 'top') {
+            scratchN.copy(YD);
+            scratchP0.addScaledVector(YD, PLANE_EYE_Y * k);
+            hasClip = true;
           } else if (cfg.reveal === 'lower') {
-            n = YD.clone().negate();
-            p0.addScaledVector(YD, PLANE_NOSE_Y * k);
+            scratchN.copy(YD).negate();
+            scratchP0.addScaledVector(YD, PLANE_NOSE_Y * k);
+            hasClip = true;
           }
 
-          if (n) {
-            UH.uPlane.value.set(n.x, n.y, n.z, -n.dot(p0));
+          if (hasClip) {
+            UH.uPlane.value.set(scratchN.x, scratchN.y, scratchN.z, -scratchN.dot(scratchP0));
             UH.uClip.value = 1;
           }
 
@@ -1050,22 +1106,23 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           const baseScale = Math.max(0.7, Math.min(3.2, shSpan / 140));
           const depthZ = -14.0 / baseScale;
 
-          const torsoPos = new THREE.Vector3(nx * 7.5, ny * 5.5, depthZ);
-          const torsoRot = new THREE.Euler(
+          scratchTorsoPos.set(nx * 7.5, ny * 5.5, depthZ);
+          scratchTorsoRot.set(
             0,
             Math.atan2(rSh.z - lSh.z, Math.max(1, rSh.x - lSh.x)) * 0.4,
             Math.atan2(rSh.y - lSh.y, rSh.x - lSh.x) * 0.4
           );
-          const torsoScale = new THREE.Vector3(
+          scratchTorsoQuat.setFromEuler(scratchTorsoRot);
+          scratchTorsoScale.set(
             (shSpan / 150) * baseScale * 0.85,
             (torsoLen / 200) * baseScale * 0.85,
             baseScale * 0.85
           );
 
           torsoG.matrix.compose(
-            torsoPos,
-            new THREE.Quaternion().setFromEuler(torsoRot),
-            torsoScale
+            scratchTorsoPos,
+            scratchTorsoQuat,
+            scratchTorsoScale
           );
           torsoG.matrixWorldNeedsUpdate = true;
 
@@ -1111,13 +1168,13 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           const ny = -(midY / Ch) * 2 + 1;
 
           const refScale = Math.max(0.6, Math.min(3.2, Math.hypot(rSh.x - lSh.x, rSh.y - lSh.y) / 140));
-          const p = new THREE.Vector3(nx * 7.5, ny * 5.5, -14.0 / refScale);
+          scratchBonePos.set(nx * 7.5, ny * 5.5, -14.0 / refScale);
 
           const dx = j2.x - j1.x;
           const dy = -(j2.y - j1.y);
           const angle = Math.atan2(dy, dx) - Math.PI / 2;
 
-          mesh.position.copy(p);
+          mesh.position.copy(scratchBonePos);
           mesh.rotation.set(0, 0, angle);
           const boneLen = (span / 160) * refScale;
           mesh.scale.set(refScale * radius, boneLen, refScale * radius);
@@ -1139,40 +1196,48 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           const h = handsP[idx];
           slot.grp.visible = false;
           if (!h) return;
-          const P = (i: number) => new THREE.Vector3(h.p[i][0], h.p[i][1], h.p[i][2]);
-          const n = new THREE.Vector3().crossVectors(P(5).sub(P(0)), P(17).sub(P(0)));
-          if (!h.right) n.negate();
+          const vecs = handPoints[idx];
+          for (let i = 0; i < 21; i++) {
+            vecs[i].set(h.p[i][0], h.p[i][1], h.p[i][2]);
+          }
+
+          scratchV1.copy(vecs[5]).sub(vecs[0]);
+          scratchV2.copy(vecs[17]).sub(vecs[0]);
+          scratchNorm.crossVectors(scratchV1, scratchV2);
+          if (!h.right) scratchNorm.negate();
 
           const put = (key: string, A: THREE.Vector3, B: THREE.Vector3) => {
             const me = slot.ms[key];
             if (!me) return;
-            const a = B.clone().sub(A);
-            const L = Math.max(0.001, a.length());
-            a.divideScalar(L);
-            const u = n.clone().sub(a.clone().multiplyScalar(n.dot(a))).normalize();
-            const sd = new THREE.Vector3().crossVectors(a, u);
-            if (!h.right) sd.negate();
+            scratchA.copy(B).sub(A);
+            const L = Math.max(0.001, scratchA.length());
+            scratchA.divideScalar(L);
+            scratchU.copy(scratchNorm).sub(scratchV1.copy(scratchA).multiplyScalar(scratchNorm.dot(scratchA))).normalize();
+            scratchSd.crossVectors(scratchA, scratchU);
+            if (!h.right) scratchSd.negate();
             me.matrix
-              .makeBasis(sd.multiplyScalar(L), a.multiplyScalar(L), u.multiplyScalar(L))
+              .makeBasis(
+                scratchV1.copy(scratchSd).multiplyScalar(L),
+                scratchV2.copy(scratchA).multiplyScalar(L),
+                scratchU.multiplyScalar(L)
+              )
               .setPosition(A);
             me.matrixWorldNeedsUpdate = true;
           };
 
-          put('Carpal bones', P(0), P(9));
-          [
-            [0, 5],
-            [0, 9],
-            [0, 13],
-            [0, 17],
-          ].forEach(([a, b], i) => put(`MC${i + 2}`, P(a), P(b)));
-          put('MC1', P(1), P(2));
-          put('PP1', P(2), P(3));
-          put('DP1', P(3), P(4));
+          put('Carpal bones', vecs[0], vecs[9]);
+          put('MC2', vecs[0], vecs[5]);
+          put('MC3', vecs[0], vecs[9]);
+          put('MC4', vecs[0], vecs[13]);
+          put('MC5', vecs[0], vecs[17]);
+          put('MC1', vecs[1], vecs[2]);
+          put('PP1', vecs[2], vecs[3]);
+          put('DP1', vecs[3], vecs[4]);
           FINGERS.forEach((f, i) => {
             const k = i + 2;
-            put(`PP${k}`, P(f[0]), P(f[1]));
-            put(`MP${k}`, P(f[1]), P(f[2]));
-            put(`DP${k}`, P(f[2]), P(f[3]));
+            put(`PP${k}`, vecs[f[0]], vecs[f[1]]);
+            put(`MP${k}`, vecs[f[1]], vecs[f[2]]);
+            put(`DP${k}`, vecs[f[2]], vecs[f[3]]);
           });
           slot.grp.visible = true;
         });

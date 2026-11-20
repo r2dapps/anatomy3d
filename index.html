@@ -3,36 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <title>Human Anatomy 3D — Interactive Full-Body WebGL Explorer</title>
+    <title>Human Anatomy 3D — Interactive Full-Body WebGL Explorer &amp; Live X-Ray Mirror</title>
     <meta
       name="description"
-      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, Live X-Ray AR Mirror with full-body/hand tracking, planar section cuts, and clinical study labs."
     />
     <meta
       name="keywords"
-      content="Human Anatomy 3D, 3D anatomy atlas, interactive human body, WebGL radiographic X-ray shader, BodyParts3D, medical education, cardiology, pulmonology, orthopedics, dentistry, physiotherapy, WebXR anatomy"
+      content="Human Anatomy 3D, 3D anatomy atlas, interactive human body, WebGL radiographic X-ray shader, BodyParts3D, Live X-Ray Mirror, MediaPipe pose tracking, medical education, cardiology, pulmonology, orthopedics, dentistry student, physiotherapy, WebXR anatomy"
     />
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#18212b" />
+    <link rel="canonical" href="https://r2dapps.github.io/anatomy3d/" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./site.webmanifest" />
 
     <!-- OpenGraph Social Card -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Human Anatomy 3D" />
-    <meta property="og:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer" />
+    <meta property="og:url" content="https://r2dapps.github.io/anatomy3d/" />
+    <meta property="og:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer &amp; Live X-Ray Mirror" />
     <meta
       property="og:description"
-      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, Live X-Ray AR Mirror with full-body tracking, section cuts, and clinical study quizzes."
     />
     <meta property="og:image" content="/og-card.svg" />
 
     <!-- Twitter / X Social Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer" />
+    <meta name="twitter:url" content="https://r2dapps.github.io/anatomy3d/" />
+    <meta name="twitter:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer &amp; Live X-Ray Mirror" />
     <meta
       name="twitter:description"
-      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, Live X-Ray AR Mirror with full-body tracking, section cuts, and clinical study quizzes."
     />
     <meta name="twitter:image" content="/og-card.svg" />
 
@@ -42,14 +45,17 @@
         "@context": "https://schema.org",
         "@type": "WebApplication",
         "name": "Human Anatomy 3D",
+        "url": "https://r2dapps.github.io/anatomy3d/",
         "applicationCategory": "EducationalApplication",
         "operatingSystem": "All",
         "browserRequirements": "Requires WebGL2",
         "isAccessibleForFree": true,
-        "description": "Interactive full-body 3D human anatomy explorer featuring 2,234 BodyParts3D meshes across 15 systems, Solid PBR and Radiographic X-Ray shaders, real-time X/Y/Z anatomical section cuts, guided clinical tours, and interactive identification quizzes.",
+        "description": "Interactive full-body 3D human anatomy explorer featuring 2,234 BodyParts3D meshes across 15 systems, Solid PBR and Radiographic X-Ray shaders, Live X-Ray AR Mirror with on-device MediaPipe vision tracking, real-time X/Y/Z anatomical section cuts, guided clinical tours, and interactive identification quizzes.",
         "featureList": [
           "2,234 full-body 3D anatomical structures across 15 systems",
           "Solid PBR and Radiographic X-Ray WebGL shaders",
+          "Live X-Ray AR Mirror with on-device MediaPipe pose, face, and hand tracking",
+          "Volumetric 3D rib cage, spine, beating heart, breathing lungs, and articulated limb bones",
           "Real-time Sagittal (X), Axial (Y), and Coronal (Z) section cuts",
           "One-click peel hide and instant unhide dissection workflow",
           "Guided specialty study tours and 3D identification quizzes for Cardiology, Pulmonology, Orthopedics, Physiotherapy, and Dentistry",
