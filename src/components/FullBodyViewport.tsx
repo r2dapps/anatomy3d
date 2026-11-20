@@ -242,7 +242,6 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
 
       let disposed = false;
       let rafId = 0;
-      let swTimer: ReturnType<typeof setTimeout> | null = null;
       let dirty = true;
       let ready = false;
       let amount = 0;
@@ -252,6 +251,11 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
       let lastIsolateKey = '';
       let lastFocusKey = '';
       let lastShaderMode: FullBodyShaderMode | '' = '';
+      let lastExposure = -1;
+      let lastPeelMode: boolean | null = null;
+      let lastCutAxisNum = -1;
+      let lastCutCoord = -999;
+      let lastCutFlipVal = 0;
       let lastQuality: QualityTier = stateRef.current.qualityTier;
       let lastStateRef: FullBodySceneState | null = null;
 
@@ -270,8 +274,8 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           const rendererStr = dbg
             ? String((gl as WebGLRenderingContext).getParameter(dbg.UNMASKED_RENDERER_WEBGL))
             : String(
-                (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).RENDERER)
-              );
+              (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).RENDERER)
+            );
           isSoftwareGl = /SwiftShader|llvmpipe|Software|Mesa|Microsoft Basic/i.test(rendererStr);
         }
       } catch {
@@ -1016,51 +1020,8 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
         dirty = true;
       };
 
-      // Coalesced demand-driven rendering with software WebGL fence sync
-      const afterDraw = (fn: FrameRequestCallback, paceMs = 16) => {
-        if (!isSoftwareGl) {
-          rafId = requestAnimationFrame(fn);
-          return;
-        }
-        const gl = renderer.getContext();
-        const fence =
-          typeof WebGL2RenderingContext !== 'undefined' &&
-          gl instanceof WebGL2RenderingContext
-            ? gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
-            : null;
-        if (!fence) {
-          swTimer = setTimeout(() => {
-            swTimer = null;
-            rafId = requestAnimationFrame(fn);
-          }, paceMs);
-          return;
-        }
-        gl.flush();
-        const poll = () => {
-          if (disposed) {
-            (gl as WebGL2RenderingContext).deleteSync(fence);
-            return;
-          }
-          const st = (gl as WebGL2RenderingContext).clientWaitSync(fence, 0, 0);
-          if (st === (gl as WebGL2RenderingContext).TIMEOUT_EXPIRED) {
-            swTimer = setTimeout(poll, 16);
-            return;
-          }
-          (gl as WebGL2RenderingContext).deleteSync(fence);
-          swTimer = null;
-          rafId = requestAnimationFrame(fn);
-        };
-        swTimer = setTimeout(poll, paceMs);
-      };
-
-      const scheduleTick = () => {
-        if (disposed || rafId || swTimer) return;
-        rafId = requestAnimationFrame(tick);
-      };
-
       const markDirty = () => {
         dirty = true;
-        scheduleTick();
       };
 
       controls.addEventListener('change', markDirty);
@@ -1282,10 +1243,11 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
       let lastTime = performance.now();
       let lastExtent = -1;
 
-      function tick(now: number) {
-        rafId = 0;
-        swTimer = null;
+      function animate(now: number) {
         if (disposed || !el) return;
+        if (!renderer.xr.isPresenting) {
+          rafId = requestAnimationFrame(animate);
+        }
 
         const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
         lastTime = now;
@@ -1296,7 +1258,7 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           resize();
         }
 
-        // Shader mode & exposure update (instant swap across all batched meshes!)
+        // Shader mode update (instant swap across all batched meshes!)
         if (s.shaderMode !== lastShaderMode) {
           lastShaderMode = s.shaderMode;
           const isXray = s.shaderMode === 'xray';
@@ -1309,11 +1271,20 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           }
           dirty = true;
         }
-        renderer.toneMappingExposure = s.exposure * 0.96;
-        xrayMaterials.forEach((m) => {
-          m.uniforms.uExposure.value = s.exposure;
-        });
-        renderer.domElement.style.cursor = s.peelMode ? 'crosshair' : 'grab';
+
+        if (s.exposure !== lastExposure) {
+          lastExposure = s.exposure;
+          renderer.toneMappingExposure = s.exposure * 0.96;
+          xrayMaterials.forEach((m) => {
+            m.uniforms.uExposure.value = s.exposure;
+          });
+          dirty = true;
+        }
+
+        if (s.peelMode !== lastPeelMode) {
+          lastPeelMode = s.peelMode;
+          renderer.domElement.style.cursor = s.peelMode ? 'crosshair' : 'grab';
+        }
 
         // Update GPU Section Cut uniforms & 3D anatomical plane wireframe
         const cutAxisNum =
@@ -1321,10 +1292,13 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
         const cutCoord = getSectionPlaneWorldCoord(s.sectionCut.axis, s.sectionCut.position);
         const cutFlipVal = s.sectionCut.flip ? -1 : 1;
         if (
-          sharedClipUniforms.uClipAxis.value !== cutAxisNum ||
-          sharedClipUniforms.uClipPos.value !== cutCoord ||
-          sharedClipUniforms.uClipFlip.value !== cutFlipVal
+          cutAxisNum !== lastCutAxisNum ||
+          cutCoord !== lastCutCoord ||
+          cutFlipVal !== lastCutFlipVal
         ) {
+          lastCutAxisNum = cutAxisNum;
+          lastCutCoord = cutCoord;
+          lastCutFlipVal = cutFlipVal;
           sharedClipUniforms.uClipAxis.value = cutAxisNum;
           sharedClipUniforms.uClipPos.value = cutCoord;
           sharedClipUniforms.uClipFlip.value = cutFlipVal;
@@ -1352,7 +1326,7 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           const cardiacBeat =
             s.motion === 'cardiac'
               ? (Math.pow(Math.max(0, Math.sin(sec * Math.PI * 1.2)), 6) * 0.045 +
-                  Math.pow(Math.max(0, Math.sin(sec * Math.PI * 1.2 - 0.55)), 8) * 0.022)
+                Math.pow(Math.max(0, Math.sin(sec * Math.PI * 1.2 - 0.55)), 8) * 0.022)
               : 0;
           const breathWave =
             s.motion === 'respiratory' ? (Math.sin(sec * 1.45) * 0.5 + 0.5) * 0.036 : 0;
@@ -1367,13 +1341,14 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
             }
           });
           dirty = true;
-        } else {
+        } else if (
+          (pulseUniformsBySystem.get('cardiac')?.uPulseScale.value ?? 0) !== 0 ||
+          (pulseUniformsBySystem.get('respiratory')?.uPulseScale.value ?? 0) !== 0
+        ) {
           pulseUniformsBySystem.forEach((u) => {
-            if (u.uPulseScale.value !== 0) {
-              u.uPulseScale.value = 0;
-              dirty = true;
-            }
+            u.uPulseScale.value = 0;
           });
+          dirty = true;
         }
 
         const stateChanged =
@@ -1576,7 +1551,7 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
                   scratchSize.z
                 ) /
                   (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) *
-                  1.4
+                1.4
               );
               controls.target.copy(scratchCenter);
               camera.position
@@ -1663,15 +1638,6 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           }
           dirty = false;
         }
-
-        // Only continue RAF loop while moving, damping, animating physiology, or auto-rotating (0% idle GPU!)
-        if (
-          !renderer.xr.isPresenting &&
-          (movingExplode || controlsMoved || controls.autoRotate || motionActive || dirty)
-        ) {
-          const isIdleMotionOnly = motionActive && !movingExplode && !controlsMoved && !dirty;
-          afterDraw(tick, isIdleMotionOnly ? 48 : 16);
-        }
       }
 
       // Quest 2 WebXR immersive-vr loop (stereo tracked rendering + Touch thumbstick manipulation)
@@ -1698,7 +1664,7 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           }
         }
         dirty = true;
-        tick(now);
+        animate(now);
       };
 
       const onXrSessionEnd = () => {
@@ -1718,6 +1684,9 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
         }
         callbacksRef.current.onVrSessionChange?.(false);
         markDirty();
+        if (!disposed && !rafId) {
+          rafId = requestAnimationFrame(animate);
+        }
       };
 
       const enterVr = async (): Promise<{ ok: boolean; message?: string }> => {
@@ -1758,10 +1727,6 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
           if (rafId) {
             cancelAnimationFrame(rafId);
             rafId = 0;
-          }
-          if (swTimer) {
-            clearTimeout(swTimer);
-            swTimer = null;
           }
 
           savedCamPos = camera.position.clone();
@@ -1836,18 +1801,18 @@ export const FullBodyViewport = forwardRef<FullBodyViewportHandle, FullBodyViewp
       ro.observe(el);
       resize();
       markDirty();
+      rafId = requestAnimationFrame(animate);
 
       return () => {
         disposed = true;
         controllerRef.current = null;
         abort.abort();
         if (activeXrSession) {
-          activeXrSession.end().catch(() => {});
+          activeXrSession.end().catch(() => { });
           activeXrSession = null;
         }
         renderer.setAnimationLoop(null);
         if (rafId) cancelAnimationFrame(rafId);
-        if (swTimer) clearTimeout(swTimer);
         ro.disconnect();
         controls.removeEventListener('change', markDirty);
         controls.dispose();
