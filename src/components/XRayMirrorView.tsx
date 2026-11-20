@@ -59,10 +59,269 @@ const MIRROR_FS = `
       vec3 c = uColor * (0.04 + 0.78 * f) * uBright * uGain * la;
       gl_FragColor = vec4(c, max(c.r, max(c.g, c.b)));
     } else {
-      gl_FragColor = vec4(uColor * (0.3 + 0.7 * nv) * uBright, 1.0);
+      gl_FragColor = vec4(uColor * (0.35 + 0.65 * nv) * uBright, 1.0);
     }
   }
 `;
+
+/* --------------------------------------------------------------------------
+   3D Procedural Anatomical Builders (Torso, Ribs, Spine, Heart, Lungs, Limbs)
+   -------------------------------------------------------------------------- */
+
+// Creates bilateral 3D rib cage and sternum
+function createRibCageGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Sternum plate
+  const sternum = new THREE.BoxGeometry(0.32, 1.7, 0.14, 2, 8, 2);
+  sternum.translate(0, 0.15, 0.88);
+  parts.push(sternum);
+
+  // 10 pairs of true & false ribs
+  for (let i = 0; i < 10; i++) {
+    const t = i / 9;
+    const y = 0.85 - t * 1.5;
+    const spanX = 0.85 + Math.sin(t * Math.PI) * 0.72;
+    const depthZ = 0.72 + Math.sin(t * Math.PI) * 0.35;
+    const ribThick = 0.038 + (1 - t) * 0.015;
+
+    // Left rib arc
+    const curveL = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.14, y + 0.08, -0.65),
+      new THREE.Vector3(-spanX * 0.7, y + 0.04, -0.45),
+      new THREE.Vector3(-spanX, y - 0.04, 0.15),
+      new THREE.Vector3(-spanX * 0.6, y - 0.12, depthZ),
+      new THREE.Vector3(-0.16, y - 0.18, 0.82),
+    ]);
+    const ribL = new THREE.TubeGeometry(curveL, 16, ribThick, 6, false);
+    parts.push(ribL);
+
+    // Right rib arc
+    const curveR = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.14, y + 0.08, -0.65),
+      new THREE.Vector3(spanX * 0.7, y + 0.04, -0.45),
+      new THREE.Vector3(spanX, y - 0.04, 0.15),
+      new THREE.Vector3(spanX * 0.6, y - 0.12, depthZ),
+      new THREE.Vector3(0.16, y - 0.18, 0.82),
+    ]);
+    const ribR = new THREE.TubeGeometry(curveR, 16, ribThick, 6, false);
+    parts.push(ribR);
+  }
+
+  // Costal cartilages connecting lower ribs to sternum
+  for (let i = 5; i < 9; i++) {
+    const t = i / 9;
+    const y = 0.85 - t * 1.5;
+    const cartL = new THREE.CylinderGeometry(0.032, 0.032, 0.45, 6);
+    cartL.rotateZ(-0.55);
+    cartL.translate(-0.35, y - 0.14, 0.84);
+    parts.push(cartL);
+
+    const cartR = new THREE.CylinderGeometry(0.032, 0.032, 0.45, 6);
+    cartR.rotateZ(0.55);
+    cartR.translate(0.35, y - 0.14, 0.84);
+    parts.push(cartR);
+  }
+
+  return mergeBufferGeometries(parts);
+}
+
+// Creates segmented 3D vertebral spine column
+function createSpineGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const count = 18; // T1 to L5 vertebrae
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    const y = 0.95 - t * 2.2;
+    const sz = 0.22 + t * 0.12;
+
+    // Vertebral body
+    const body = new THREE.CylinderGeometry(sz * 0.9, sz, 0.09, 8);
+    body.translate(0, y, -0.62);
+    parts.push(body);
+
+    // Spinous process pointing posterior
+    const spine = new THREE.ConeGeometry(sz * 0.4, 0.28, 4);
+    spine.rotateX(-1.3);
+    spine.translate(0, y - 0.03, -0.82);
+    parts.push(spine);
+
+    // Transverse processes
+    const tpL = new THREE.BoxGeometry(0.38, 0.06, 0.08);
+    tpL.translate(-sz * 1.1, y, -0.66);
+    parts.push(tpL);
+    const tpR = new THREE.BoxGeometry(0.38, 0.06, 0.08);
+    tpR.translate(sz * 1.1, y, -0.66);
+    parts.push(tpR);
+  }
+  return mergeBufferGeometries(parts);
+}
+
+// Creates volumetric 3D heart with aorta arch
+function createHeartGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Cardiac ventricles & atria bulk (oriented towards left chest)
+  const ventricles = new THREE.SphereGeometry(0.52, 14, 12);
+  ventricles.scale(0.85, 1.25, 0.95);
+  ventricles.rotateZ(-0.35);
+  ventricles.rotateX(0.2);
+  ventricles.translate(-0.28, 0.18, 0.22);
+  parts.push(ventricles);
+
+  // Aortic arch
+  const aortaCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.22, 0.65, 0.25),
+    new THREE.Vector3(-0.16, 0.98, 0.18),
+    new THREE.Vector3(0.05, 0.95, -0.05),
+    new THREE.Vector3(0.08, 0.65, -0.25),
+  ]);
+  const aorta = new THREE.TubeGeometry(aortaCurve, 12, 0.11, 8, false);
+  parts.push(aorta);
+
+  // Pulmonary trunk
+  const pulmCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.35, 0.55, 0.35),
+    new THREE.Vector3(-0.32, 0.85, 0.22),
+    new THREE.Vector3(-0.48, 0.82, -0.05),
+  ]);
+  const pulm = new THREE.TubeGeometry(pulmCurve, 10, 0.09, 8, false);
+  parts.push(pulm);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Creates bilateral 3D lungs with cardiac notch
+function createLungsGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Right lung (3 lobes, larger)
+  const lungR = new THREE.SphereGeometry(0.68, 14, 14);
+  lungR.scale(0.88, 1.85, 0.92);
+  lungR.translate(0.72, 0.15, 0.08);
+  parts.push(lungR);
+
+  // Left lung (2 lobes with anterior cardiac notch)
+  const lungL = new THREE.SphereGeometry(0.62, 14, 14);
+  lungL.scale(0.78, 1.78, 0.88);
+  lungL.translate(-0.76, 0.18, 0.08);
+  parts.push(lungL);
+
+  // Trachea & main bronchi
+  const trachea = new THREE.CylinderGeometry(0.08, 0.08, 0.65, 8);
+  trachea.translate(0, 1.05, -0.22);
+  parts.push(trachea);
+
+  const bronchusL = new THREE.CylinderGeometry(0.06, 0.06, 0.42, 6);
+  bronchusL.rotateZ(-0.65);
+  bronchusL.translate(-0.25, 0.68, -0.15);
+  parts.push(bronchusL);
+
+  const bronchusR = new THREE.CylinderGeometry(0.06, 0.06, 0.42, 6);
+  bronchusR.rotateZ(0.65);
+  bronchusR.translate(0.25, 0.68, -0.15);
+  parts.push(bronchusR);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Creates 3D pelvic girdle and sacrum
+function createPelvisGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Left & Right iliac crest wings
+  const iliumL = new THREE.TorusGeometry(0.65, 0.14, 8, 16, Math.PI * 0.95);
+  iliumL.rotateZ(-0.4);
+  iliumL.rotateY(0.4);
+  iliumL.translate(-0.52, -1.18, -0.05);
+  parts.push(iliumL);
+
+  const iliumR = new THREE.TorusGeometry(0.65, 0.14, 8, 16, Math.PI * 0.95);
+  iliumR.rotateZ(Math.PI + 0.4);
+  iliumR.rotateY(-0.4);
+  iliumR.translate(0.52, -1.18, -0.05);
+  parts.push(iliumR);
+
+  // Pubic symphysis anterior bridge
+  const pubis = new THREE.BoxGeometry(0.58, 0.22, 0.2);
+  pubis.translate(0, -1.78, 0.35);
+  parts.push(pubis);
+
+  // Sacrum wedge
+  const sacrum = new THREE.ConeGeometry(0.42, 0.75, 5);
+  sacrum.rotateX(Math.PI);
+  sacrum.translate(0, -1.35, -0.48);
+  parts.push(sacrum);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Creates generic long bone (flared epiphysis at ends)
+function createAnatomicBoneGeometry(length: number, radius: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const shaft = new THREE.CylinderGeometry(radius * 0.75, radius * 0.75, length * 0.88, 8);
+  parts.push(shaft);
+
+  // Proximal flared head
+  const headP = new THREE.SphereGeometry(radius * 1.45, 8, 8);
+  headP.translate(0, length * 0.45, 0);
+  parts.push(headP);
+
+  // Distal condyles
+  const headD1 = new THREE.SphereGeometry(radius * 1.25, 8, 8);
+  headD1.translate(-radius * 0.65, -length * 0.45, 0);
+  parts.push(headD1);
+  const headD2 = new THREE.SphereGeometry(radius * 1.25, 8, 8);
+  headD2.translate(radius * 0.65, -length * 0.45, 0);
+  parts.push(headD2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Simple geometry merger
+function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let totalPos = 0;
+  let totalIdx = 0;
+  for (const g of geometries) {
+    totalPos += g.attributes.position.count;
+    totalIdx += g.index ? g.index.count : 0;
+  }
+
+  const mergedPos = new Float32Array(totalPos * 3);
+  const mergedNorm = new Float32Array(totalPos * 3);
+  const mergedIdx = new Uint32Array(totalIdx);
+
+  let posOffset = 0;
+  let idxOffset = 0;
+  let vertexOffset = 0;
+
+  for (const g of geometries) {
+    const pos = g.attributes.position;
+    const norm = g.attributes.normal;
+    mergedPos.set(pos.array, posOffset * 3);
+    if (norm) {
+      mergedNorm.set(norm.array, posOffset * 3);
+    }
+    if (g.index) {
+      for (let i = 0; i < g.index.count; i++) {
+        mergedIdx[idxOffset + i] = g.index.array[i] + vertexOffset;
+      }
+      idxOffset += g.index.count;
+    }
+    vertexOffset += pos.count;
+    posOffset += pos.count;
+  }
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
+  if (totalIdx > 0) {
+    out.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
+  } else {
+    out.computeVertexNormals();
+  }
+  return out;
+}
 
 export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,7 +431,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             },
             audio: false,
           },
-          { video: { facingMode: prefMode }, audio: false },
+          { video: { facingMode: prefFacingSafe(prefMode) }, audio: false },
           { video: true, audio: false },
         ];
 
@@ -193,6 +452,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           if (st.facingMode) actualFacing = st.facingMode as 'user' | 'environment';
         }
 
+        // Auto-mirror logic matching DivyaDrusti / anatomy index.html
         const isMirror = actualFacing !== 'environment';
         setFacing(actualFacing);
         setMirror(isMirror);
@@ -208,9 +468,13 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         }
       };
 
+      function prefFacingSafe(mode: 'user' | 'environment') {
+        return mode;
+      }
+
       await openCam(settingsRef.current.facing);
 
-      setStatus('Loading BodyParts3D anatomical structures…');
+      setStatus('Loading BodyParts3D full anatomical structures…');
       const geomMap = await loadAnatomyGeometries();
 
       setStatus('Initializing on-device MediaPipe vision models…');
@@ -298,10 +562,6 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
       const camO = new THREE.OrthographicCamera(0, Cw, Ch, 0, -3000, 3000);
 
-      const headG = new THREE.Group();
-      headG.matrixAutoUpdate = false;
-      sceneH.add(headG);
-
       const makeShared = (gain: number) => ({
         uBright: { value: 1.1 },
         uXray: { value: 1 },
@@ -334,6 +594,11 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         return m;
       };
 
+      // 1. Head Group
+      const headG = new THREE.Group();
+      headG.matrixAutoUpdate = false;
+      sceneH.add(headG);
+
       const headParts: { mesh: THREE.Mesh; structure: AnatomyStructure }[] = [];
       const handGeoms: Record<string, THREE.BufferGeometry> = {};
 
@@ -351,11 +616,58 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         }
       }
 
+      // 2. Full-Body 3D Torso & Organs Group (Rib cage, Spine, Heart, Lungs, Pelvis)
+      const torsoG = new THREE.Group();
+      torsoG.matrixAutoUpdate = false;
+      torsoG.visible = false;
+      sceneH.add(torsoG);
+
+      // Rib cage mesh (bone color)
+      const ribsMesh = new THREE.Mesh(createRibCageGeometry(), makeMat([0.82, 0.94, 1.0], UH));
+      torsoG.add(ribsMesh);
+
+      // Vertebral spine mesh (bone color)
+      const spineMesh = new THREE.Mesh(createSpineGeometry(), makeMat([0.78, 0.92, 1.0], UH));
+      torsoG.add(spineMesh);
+
+      // Heart mesh (deep cardiac crimson/pink)
+      const heartMesh = new THREE.Mesh(createHeartGeometry(), makeMat([1.0, 0.28, 0.42], UH));
+      torsoG.add(heartMesh);
+
+      // Lungs mesh (cyan/pulmonary blue)
+      const lungsMesh = new THREE.Mesh(createLungsGeometry(), makeMat([0.38, 0.82, 0.98], UH));
+      torsoG.add(lungsMesh);
+
+      // Pelvis mesh (bone color)
+      const pelvisMesh = new THREE.Mesh(createPelvisGeometry(), makeMat([0.80, 0.92, 1.0], UH));
+      torsoG.add(pelvisMesh);
+
+      // 3. Full-Body 3D Limb Bones (Humerus, Forearm, Femur, Tibia)
+      const limbBoneGeom = createAnatomicBoneGeometry(1.0, 0.08);
+      const makeLimbMesh = () => {
+        const m = new THREE.Mesh(limbBoneGeom, makeMat([0.82, 0.94, 1.0], UH));
+        m.visible = false;
+        sceneH.add(m);
+        return m;
+      };
+
+      const limbBones = {
+        uArmL: makeLimbMesh(),
+        lArmL: makeLimbMesh(),
+        uArmR: makeLimbMesh(),
+        lArmR: makeLimbMesh(),
+        uLegL: makeLimbMesh(),
+        lLegL: makeLimbMesh(),
+        uLegR: makeLimbMesh(),
+        lLegR: makeLimbMesh(),
+      };
+
+      // 4. Hand Slots (Orthographic 3D mesh placement)
       const handSlots = [0, 1].map(() => {
         const grp = new THREE.Group();
         const ms: Record<string, THREE.Mesh> = {};
         for (const k of Object.keys(handGeoms)) {
-          const me = new THREE.Mesh(handGeoms[k], makeMat([0.82, 0.94, 1.0], UD));
+          const me = new THREE.Mesh(handGeoms[k], makeMat([0.85, 0.95, 1.0], UD));
           me.matrixAutoUpdate = false;
           me.frustumCulled = false;
           grp.add(me);
@@ -468,6 +780,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         rafId = requestAnimationFrame(renderLoop);
         const cfg = settingsRef.current;
         const isMirror = cfg.mirror;
+        const now = performance.now();
 
         if (cfg.look !== prevLook) {
           prevLook = cfg.look;
@@ -486,7 +799,6 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
         if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
-          const now = performance.now();
 
           let mx: { data: number[] } | undefined = undefined;
           if (faceLandmarker) {
@@ -619,10 +931,19 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
                 };
               }).detectForVideo(video, now);
 
-              handsP = hr.landmarks.map((lm, i) => ({
-                p: lm.map((q) => [Ox + q.x * Rw, Oy + q.y * Rh, -q.z * Rw]),
-                right: hr.handednesses[i]?.[0]?.categoryName === 'Left',
-              }));
+              handsP = hr.landmarks.map((lm, i) => {
+                const cat = hr.handednesses[i]?.[0]?.categoryName || 'Right';
+                // Handedness fix:
+                // When mirror is active (selfie), MediaPipe's 'Left' label corresponds
+                // to user's left hand on screen.
+                // Inverting the boolean ensures the left-hand skeleton (thumb pointing outward)
+                // renders on the user's left hand!
+                const isRight = isMirror ? (cat !== 'Left') : (cat === 'Right');
+                return {
+                  p: lm.map((q) => [Ox + q.x * Rw, Oy + q.y * Rh, -q.z * Rw]),
+                  right: isRight,
+                };
+              });
             } catch {}
           }
         }
@@ -646,7 +967,6 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
         UH.uLensOn.value = isLens && tip ? 1 : 0;
         if (tip) {
-          // Pass lens center to fragment shader in gl_FragCoord coordinates
           UH.uLens.value.set(tip[0], Ch - tip[1], R, 0.22);
         }
 
@@ -700,7 +1020,121 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           }
         }
 
-        // Hand bones in 3D
+        // 3D Full-Body Torso, Ribs, Heart, Lungs, and Pelvis Placement
+        const lSh = smoothPose[11];
+        const rSh = smoothPose[12];
+        const lHip = smoothPose[23];
+        const rHip = smoothPose[24];
+        const hasTorso =
+          poseOn &&
+          lSh.v > 0.35 &&
+          rSh.v > 0.35 &&
+          (lHip.v > 0.25 || rHip.v > 0.25);
+
+        torsoG.visible = hasTorso && !(isLens && !tip);
+        if (hasTorso) {
+          const neckX = (lSh.x + rSh.x) * 0.5;
+          const neckY = (lSh.y + rSh.y) * 0.5;
+          const hipMidX = (lHip.x + rHip.x) * 0.5;
+          const hipMidY = (lHip.y + rHip.y) * 0.5;
+
+          const shSpan = Math.hypot(rSh.x - lSh.x, rSh.y - lSh.y);
+          const torsoLen = Math.hypot(hipMidX - neckX, hipMidY - neckY) || shSpan * 1.35;
+
+          // Screen to 3D Perspective placement
+          const midX = (neckX + hipMidX) * 0.5;
+          const midY = (neckY + hipMidY) * 0.5;
+          const nx = (midX / Cw) * 2 - 1;
+          const ny = -(midY / Ch) * 2 + 1;
+
+          const baseScale = Math.max(0.7, Math.min(3.2, shSpan / 140));
+          const depthZ = -14.0 / baseScale;
+
+          const torsoPos = new THREE.Vector3(nx * 7.5, ny * 5.5, depthZ);
+          const torsoRot = new THREE.Euler(
+            0,
+            Math.atan2(rSh.z - lSh.z, Math.max(1, rSh.x - lSh.x)) * 0.4,
+            Math.atan2(rSh.y - lSh.y, rSh.x - lSh.x) * 0.4
+          );
+          const torsoScale = new THREE.Vector3(
+            (shSpan / 150) * baseScale * 0.85,
+            (torsoLen / 200) * baseScale * 0.85,
+            baseScale * 0.85
+          );
+
+          torsoG.matrix.compose(
+            torsoPos,
+            new THREE.Quaternion().setFromEuler(torsoRot),
+            torsoScale
+          );
+          torsoG.matrixWorldNeedsUpdate = true;
+
+          // Anatomical Explode offsets for 3D Torso Organs
+          const ex = cfg.explode * 1.5;
+          ribsMesh.position.set(0, 0, ex * 0.6);
+          spineMesh.position.set(0, 0, -ex * 0.8);
+          pelvisMesh.position.set(0, -ex * 0.9, 0);
+
+          // Heart heartbeat animation and explode offset
+          const pulse = 1.0 + Math.sin(now * 0.007) * 0.045;
+          heartMesh.scale.set(pulse, pulse, pulse);
+          heartMesh.position.set(-ex * 0.8, 0, ex * 1.1);
+
+          // Lungs respiration expansion and explode offset
+          const breath = 1.0 + Math.sin(now * 0.002) * 0.035;
+          lungsMesh.scale.set(breath, breath, breath);
+          lungsMesh.position.set(0, 0, ex * 0.4);
+        }
+
+        // Helper to orient a 3D long bone between two 2D/3D joints
+        const orientBone = (
+          mesh: THREE.Mesh,
+          j1: SmoothedJoint,
+          j2: SmoothedJoint,
+          minVis = 0.35,
+          radius = 0.12
+        ) => {
+          if (!poseOn || j1.v < minVis || j2.v < minVis) {
+            mesh.visible = false;
+            return;
+          }
+          const span = Math.hypot(j2.x - j1.x, j2.y - j1.y);
+          if (span < 10) {
+            mesh.visible = false;
+            return;
+          }
+          mesh.visible = !(isLens && !tip);
+
+          const midX = (j1.x + j2.x) * 0.5;
+          const midY = (j1.y + j2.y) * 0.5;
+          const nx = (midX / Cw) * 2 - 1;
+          const ny = -(midY / Ch) * 2 + 1;
+
+          const refScale = Math.max(0.6, Math.min(3.2, Math.hypot(rSh.x - lSh.x, rSh.y - lSh.y) / 140));
+          const p = new THREE.Vector3(nx * 7.5, ny * 5.5, -14.0 / refScale);
+
+          const dx = j2.x - j1.x;
+          const dy = -(j2.y - j1.y);
+          const angle = Math.atan2(dy, dx) - Math.PI / 2;
+
+          mesh.position.copy(p);
+          mesh.rotation.set(0, 0, angle);
+          const boneLen = (span / 160) * refScale;
+          mesh.scale.set(refScale * radius, boneLen, refScale * radius);
+        };
+
+        // Orient 3D Long Bones for Arms and Legs
+        orientBone(limbBones.uArmL, smoothPose[11], smoothPose[13]);
+        orientBone(limbBones.lArmL, smoothPose[13], smoothPose[15]);
+        orientBone(limbBones.uArmR, smoothPose[12], smoothPose[14]);
+        orientBone(limbBones.lArmR, smoothPose[14], smoothPose[16]);
+
+        orientBone(limbBones.uLegL, smoothPose[23], smoothPose[25], 0.3, 0.15);
+        orientBone(limbBones.lLegL, smoothPose[25], smoothPose[27], 0.3, 0.13);
+        orientBone(limbBones.uLegR, smoothPose[24], smoothPose[26], 0.3, 0.15);
+        orientBone(limbBones.lLegR, smoothPose[26], smoothPose[28], 0.3, 0.13);
+
+        // 3D Hand Bones (Carpals, Metacarpals, Phalanges)
         handSlots.forEach((slot, idx) => {
           const h = handsP[idx];
           slot.grp.visible = false;
@@ -749,18 +1183,6 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
         // Radiographic Mixed Reality Projection & Educational Labels
         if (poseOn && ovCtx) {
-          const drawBone = (i1: number, i2: number, alpha = 0.55, width = 2) => {
-            const j1 = smoothPose[i1];
-            const j2 = smoothPose[i2];
-            if (j1.v < 0.25 || j2.v < 0.25) return;
-            ovCtx.strokeStyle = `rgba(125, 211, 252, ${alpha})`;
-            ovCtx.lineWidth = width;
-            ovCtx.beginPath();
-            ovCtx.moveTo(j1.x, j1.y);
-            ovCtx.lineTo(j2.x, j2.y);
-            ovCtx.stroke();
-          };
-
           const drawReticle = (i: number, r = 4, alpha = 0.7) => {
             const j = smoothPose[i];
             if (j.v < 0.3) return;
@@ -773,58 +1195,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             ovCtx.stroke();
           };
 
-          // Vertebral Spine Column (midpoint of shoulders down to pelvis)
-          const lSh = smoothPose[11];
-          const rSh = smoothPose[12];
-          const lHip = smoothPose[23];
-          const rHip = smoothPose[24];
-          if (lSh.v > 0.3 && rSh.v > 0.3 && lHip.v > 0.3 && rHip.v > 0.3) {
-            const neckX = (lSh.x + rSh.x) * 0.5;
-            const neckY = (lSh.y + rSh.y) * 0.5;
-            const sacrumX = (lHip.x + rHip.x) * 0.5;
-            const sacrumY = (lHip.y + rHip.y) * 0.5;
-
-            // Radiographic vertebral spine beam
-            ovCtx.strokeStyle = 'rgba(147, 197, 253, 0.65)';
-            ovCtx.lineWidth = 3;
-            ovCtx.beginPath();
-            ovCtx.moveTo(neckX, neckY);
-            ovCtx.lineTo(sacrumX, sacrumY);
-            ovCtx.stroke();
-
-            // Thoracic ribcage & Cardiopulmonary cavity
-            const thoraxMidY = neckY + (sacrumY - neckY) * 0.38;
-            const ribRadiusX = Math.abs(rSh.x - lSh.x) * 0.42;
-            const ribRadiusY = Math.abs(sacrumY - neckY) * 0.28;
-            ovCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-            ovCtx.lineWidth = 1.8;
-            ovCtx.beginPath();
-            ovCtx.ellipse(neckX, thoraxMidY, ribRadiusX, ribRadiusY, 0, 0, Math.PI * 2);
-            ovCtx.stroke();
-          }
-
-          // Clavicles & Pelvis
-          drawBone(11, 12, 0.6, 2.5);
-          drawBone(23, 24, 0.6, 2.5);
-
-          // Arms: Shoulder -> Elbow -> Wrist
-          drawBone(11, 13, 0.5, 2);
-          drawBone(13, 15, 0.5, 2);
-          drawBone(12, 14, 0.5, 2);
-          drawBone(14, 16, 0.5, 2);
-
-          // Legs: Hip -> Knee -> Ankle -> Feet
-          drawBone(23, 25, 0.5, 2.2);
-          drawBone(25, 27, 0.5, 2.2);
-          drawBone(27, 29, 0.4, 1.8);
-          drawBone(29, 31, 0.4, 1.8);
-
-          drawBone(24, 26, 0.5, 2.2);
-          drawBone(26, 28, 0.5, 2.2);
-          drawBone(28, 30, 0.4, 1.8);
-          drawBone(30, 32, 0.4, 1.8);
-
-          // Articulation nodes
+          // Joint Articulation Nodes
           [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach((idx) => drawReticle(idx));
 
           // Educational 3D Anatomical Labels (for classroom instruction)
@@ -870,27 +1241,34 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
               );
             }
 
-            // Thorax / Cardiopulmonary
+            // Thorax / Cardiopulmonary Organs
             if (lSh.v > 0.3 && rSh.v > 0.3) {
               const cx = (lSh.x + rSh.x) * 0.5;
-              const cy = (lSh.y + rSh.y) * 0.5 + 40;
-              drawCallout(cx, cy, 'Thoracic Cavity', 'Pulmonary & Cardiac Field', 'right');
+              const cy = (lSh.y + rSh.y) * 0.5 + 30;
+              drawCallout(cx, cy, 'Cardiopulmonary Organs', '3D Heart & Lungs', 'right');
+            }
+
+            // Vertebral Spine
+            if (lSh.v > 0.3 && rSh.v > 0.3 && lHip.v > 0.3 && rHip.v > 0.3) {
+              const sx = (lSh.x + rSh.x + lHip.x + rHip.x) * 0.25;
+              const sy = (lSh.y + rSh.y + lHip.y + rHip.y) * 0.25 + 20;
+              drawCallout(sx, sy, 'Vertebral Spine', 'Thoracolumbar Column', 'left');
             }
 
             // Pelvic Girdle
             if (lHip.v > 0.3 && rHip.v > 0.3) {
               const px = (lHip.x + rHip.x) * 0.5;
               const py = (lHip.y + rHip.y) * 0.5;
-              drawCallout(px, py, 'Pelvic Girdle', 'Sacrum & Acetabulum', 'left');
+              drawCallout(px, py, 'Pelvic Girdle', 'Sacrum & Ilium', 'right');
             }
 
-            // Femur / Lower extremity
+            // Knee Joint / Femur
             if (smoothPose[25].v > 0.3) {
               drawCallout(
                 smoothPose[25].x,
                 smoothPose[25].y,
                 'Knee Articulation',
-                'Patella & Femur',
+                'Femur & Patella',
                 'right'
               );
             }
@@ -979,8 +1357,9 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           </div>
           <h2 className="font-display text-2xl font-bold tracking-tight">Live X-Ray Mirror Mode</h2>
           <p className="text-[13.5px] text-slate-300 max-w-md mt-2.5 leading-relaxed">
-            Projects the full 49-structure BodyParts3D skull, brain, teeth, and hand skeleton directly
-            onto your camera feed with live jaw articulation and full-body mixed reality tracking.
+            Projects the complete 3D skull, brain, heart, lungs, ribcage, spine, pelvis, and hand
+            skeleton directly onto your camera feed with live jaw articulation and full-body mixed
+            reality tracking.
           </p>
 
           {error && (
@@ -1093,7 +1472,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
                   className="w-full rounded-xl px-2.5 py-1.5 text-[11.5px] font-medium bg-white/10 border border-white/15 text-white focus:outline-none cursor-pointer"
                 >
                   <option value="whole" className="bg-[#0f172a] text-white">
-                    Whole Head
+                    Whole Body & Head
                   </option>
                   <option value="lens" className="bg-[#0f172a] text-white">
                     X-Ray Lens
