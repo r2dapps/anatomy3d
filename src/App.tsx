@@ -344,6 +344,9 @@ export default function App() {
       const highlightedIds = highlightNamedConcepts(conceptList);
       const shouldIsolate = Boolean(step.isolateHighlight && highlightedIds.length > 0);
       setIsolate(shouldIsolate);
+      if (shouldIsolate && typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setMobileDockCollapsed(true);
+      }
       if (step.focusBox && !shouldIsolate) {
         setFocusBox({ ...step.focusBox, token: Date.now() });
       } else if (!shouldIsolate) {
@@ -1118,7 +1121,13 @@ export default function App() {
           showTourLabels={showTourLabels}
           isDark={isDark}
           onToggleCollapse={() => setSheetCollapsed((c) => !c)}
-          onToggleIsolate={() => setIsolate((v) => !v)}
+          onToggleIsolate={() => {
+            const nextIsolate = !isolate;
+            setIsolate(nextIsolate);
+            if (nextIsolate && typeof window !== 'undefined' && window.innerWidth < 1024) {
+              setMobileDockCollapsed(true);
+            }
+          }}
           onToggleTourLabels={() => setShowTourLabels((v) => !v)}
           onSelectTrack={handleSelectTrack}
           onChangeMode={(m) => {
@@ -1158,7 +1167,7 @@ export default function App() {
             setIsolate(nextIsolate);
             if (nextIsolate && typeof window !== 'undefined' && window.innerWidth < 1024) {
               setSheetCollapsed(true);
-              setMobileDockCollapsed(false);
+              setMobileDockCollapsed(true);
             }
           }}
           onHideSelected={handleHideSelected}
@@ -1175,7 +1184,7 @@ export default function App() {
         {/* Unified Bottom Clinical Dock: Explode / Section Cut (X, Y, Z) + Fast Undo / Unhide All */}
         <div className="pointer-events-none w-full lg:fixed lg:bottom-3 lg:left-3 lg:right-3 lg:z-20 flex justify-center">
           <div
-            className={`pointer-events-auto w-full max-w-[680px] rounded-2xl border px-3 sm:px-3.5 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 ${
+            className={`pointer-events-auto w-full max-w-[680px] rounded-2xl border px-2.5 sm:px-3.5 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 overflow-hidden ${
               isDark
                 ? 'bg-[#0c1622]/94 border-[#7bc4e8]/18 text-[#e8f3fb]'
                 : 'bg-white/95 border-[#18212b]/10 text-[#18212b] shadow-[0_10px_32px_rgba(24,33,43,0.09)]'
@@ -1183,7 +1192,7 @@ export default function App() {
           >
             {/* Mobile Collapsed 1-Line Dock Bar (maximizes 3D canvas while keeping 1-tap access to Explode, Section & Study Lab) */}
             {mobileDockCollapsed && (
-              <div className="flex sm:hidden items-center justify-between gap-1.5">
+              <div className="flex sm:hidden items-center justify-between gap-1.5 min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <button
                     type="button"
@@ -1191,7 +1200,7 @@ export default function App() {
                       setDockTool('explode');
                       setMobileDockCollapsed(false);
                     }}
-                    className={`h-7 px-2.5 rounded-lg text-[11.5px] font-semibold cursor-pointer ${
+                    className={`h-7 px-2 rounded-lg text-[11px] font-semibold cursor-pointer whitespace-nowrap ${
                       explode > 0
                         ? 'bg-[#0284c7] text-white'
                         : isDark
@@ -1210,7 +1219,7 @@ export default function App() {
                       }
                       setMobileDockCollapsed(false);
                     }}
-                    className={`h-7 px-2.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer ${
+                    className={`h-7 px-2 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap ${
                       sectionCut.axis !== 'off'
                         ? 'bg-[#0284c7] text-white'
                         : isDark
@@ -1218,7 +1227,7 @@ export default function App() {
                         : 'bg-[#f1f4f2] text-[#2c3a47]'
                     }`}
                   >
-                    <Scissors className="w-3 h-3" />
+                    <Scissors className="w-3 h-3 shrink-0" />
                     <span>Section{sectionCut.axis !== 'off' ? ` ${sectionCut.axis.toUpperCase()}` : ''}</span>
                   </button>
                   <button
@@ -1230,7 +1239,7 @@ export default function App() {
                         handleStartTour();
                       }
                     }}
-                    className={`h-7 px-2.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer ${
+                    className={`h-7 px-2 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap ${
                       studyLabOpen
                         ? 'bg-[#0284c7] text-white'
                         : isDark
@@ -1238,7 +1247,7 @@ export default function App() {
                         : 'bg-[#f1f4f2] text-[#2c3a47]'
                     }`}
                   >
-                    <GraduationCap className="w-3.5 h-3.5" />
+                    <GraduationCap className="w-3.5 h-3.5 shrink-0" />
                     <span>Study</span>
                   </button>
                 </div>
@@ -1259,16 +1268,16 @@ export default function App() {
             {/* Full Dock Content (always visible on sm+, toggleable on mobile < sm) */}
             <div className={`${mobileDockCollapsed ? 'hidden sm:contents' : 'contents'}`}>
               {/* Top Row on Mobile / Left Cluster on Desktop: Explode vs Section + Mobile Quick Actions */}
-              <div className="flex items-center justify-between gap-1.5 shrink-0">
+              <div className="flex items-center justify-between gap-1.5 min-w-0 shrink-0">
                 <div
-                  className={`grid grid-cols-2 p-0.5 rounded-xl shrink-0 ${
+                  className={`flex items-center p-0.5 rounded-xl shrink-0 ${
                     isDark ? 'bg-[#071019]' : 'bg-[#eaeeec]'
                   }`}
                 >
                   <button
                     type="button"
                     onClick={() => setDockTool('explode')}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold cursor-pointer transition-colors ${
+                    className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-[11.5px] font-semibold cursor-pointer transition-colors whitespace-nowrap ${
                       dockTool === 'explode'
                         ? isDark
                           ? 'bg-[#17314a] text-white'
@@ -1286,7 +1295,7 @@ export default function App() {
                         setSectionCut({ axis: 'z', position: 0.5, flip: false });
                       }
                     }}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                    className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap ${
                       dockTool === 'section'
                         ? isDark
                           ? 'bg-[#0284c7] text-white'
@@ -1294,13 +1303,13 @@ export default function App() {
                         : muted
                     }`}
                   >
-                    <Scissors className="w-3 h-3" />
+                    <Scissors className="w-3 h-3 shrink-0" />
                     <span>Section</span>
                   </button>
                 </div>
 
-                {/* Mobile Quick Controls (Study, Peel, Unhide, Reset, Collapse) on Row 1 */}
-                <div className="flex sm:hidden items-center gap-1">
+                {/* Mobile Quick Controls (Study, Peel, Unhide, Reset, Collapse) sized to fit cleanly inside >=320px cards */}
+                <div className="flex sm:hidden items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -1312,7 +1321,9 @@ export default function App() {
                     }}
                     aria-label="Toggle Study Lab"
                     title="Guided Tours & 3D Quizzes"
-                    className={`h-8 px-2 rounded-lg text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer ${
+                    className={`h-7 ${
+                      hiddenPartIds.length > 0 ? 'w-7 justify-center px-0' : 'px-2 gap-1'
+                    } rounded-lg text-[11px] font-semibold flex items-center cursor-pointer shrink-0 ${
                       studyLabOpen
                         ? 'bg-[#0284c7] text-white'
                         : isDark
@@ -1320,15 +1331,15 @@ export default function App() {
                         : 'bg-[#f1f4f2] text-[#2c3a47]'
                     }`}
                   >
-                    <GraduationCap className="w-3.5 h-3.5" />
-                    <span>Study</span>
+                    <GraduationCap className="w-3.5 h-3.5 shrink-0" />
+                    {hiddenPartIds.length === 0 && <span>Study</span>}
                   </button>
                   <button
                     type="button"
                     onClick={() => setPeelMode((v) => !v)}
                     aria-label="Toggle Peel Quick-Hide"
                     title="Peel Mode"
-                    className={`h-8 w-8 rounded-lg flex items-center justify-center cursor-pointer ${
+                    className={`h-7 w-7 rounded-lg flex items-center justify-center cursor-pointer shrink-0 ${
                       peelMode
                         ? 'bg-[#0284c7] text-white'
                         : isDark
@@ -1343,9 +1354,9 @@ export default function App() {
                       type="button"
                       onClick={handleUnhideAll}
                       aria-label={`Unhide ${hiddenPartIds.length} hidden structures`}
-                      className="h-8 px-2 rounded-lg bg-[#0284c7] text-white text-[11.5px] font-semibold flex items-center gap-1 cursor-pointer"
+                      className="h-7 px-1.5 rounded-lg bg-[#0284c7] text-white text-[11px] font-semibold flex items-center gap-0.5 cursor-pointer shrink-0"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="w-3 h-3 shrink-0" />
                       <span>{hiddenPartIds.length}</span>
                     </button>
                   )}
@@ -1353,7 +1364,7 @@ export default function App() {
                     type="button"
                     onClick={handleResetAll}
                     aria-label="Reset view"
-                    className={`h-8 w-8 rounded-lg flex items-center justify-center cursor-pointer ${
+                    className={`h-7 w-7 rounded-lg flex items-center justify-center cursor-pointer shrink-0 ${
                       isDark ? 'bg-[#122336] text-[#cfe7f8]' : 'bg-[#f1f4f2] text-[#2c3a47]'
                     }`}
                   >
@@ -1364,7 +1375,7 @@ export default function App() {
                     onClick={() => setMobileDockCollapsed(true)}
                     aria-label="Collapse Explode and Section tools"
                     title="Collapse tools"
-                    className={`h-8 w-8 rounded-lg flex items-center justify-center cursor-pointer ${
+                    className={`h-7 w-7 rounded-lg flex items-center justify-center cursor-pointer shrink-0 ${
                       isDark ? 'bg-[#122336] text-[#cfe7f8]' : 'bg-[#f1f4f2] text-[#2c3a47]'
                     }`}
                   >
