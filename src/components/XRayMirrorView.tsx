@@ -117,11 +117,39 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
       setStatus('Requesting local camera access…');
       const openCam = async (mode: 'user' | 'environment') => {
-        if (stream) stream.getTracks().forEach((t) => t.stop());
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          await new Promise((r) => setTimeout(r, 60));
+        }
+        const prefFacing = mode || 'user';
+        let s: MediaStream | null = null;
+        const constraints: MediaStreamConstraints[] = [
+          {
+            video: {
+              facingMode: { ideal: prefFacing },
+              width: { ideal: 1920, max: 1920 },
+              height: { ideal: 1080, max: 1080 },
+            },
+            audio: false,
+          },
+          { video: { facingMode: prefFacing }, audio: false },
+          { video: true, audio: false },
+        ];
+        for (const c of constraints) {
+          try {
+            s = await navigator.mediaDevices.getUserMedia(c);
+            if (s) break;
+          } catch {}
+        }
+        if (!s) throw new Error('Camera access failed or unavailable on this device.');
+        stream = s;
+        const track = stream.getVideoTracks()[0];
+        if (track?.getSettings) {
+          const settings = track.getSettings();
+          if (settings.facingMode) {
+            setFacing(settings.facingMode as 'user' | 'environment');
+          }
+        }
         video.srcObject = stream;
         await video.play();
         if (!video.videoWidth) {
@@ -136,7 +164,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       setStatus('Loading BodyParts3D 3D meshes…');
       const geomMap = await loadAnatomyGeometries();
 
-      setStatus('Initializing on-device MediaPipe face & hand tracking…');
+      setStatus('Initializing on-device MediaPipe vision tracking…');
       // Dynamic ESM import from CDN for optional live camera mode only
       const mpMod = await import(/* @vite-ignore */ `${MP_CDN}/+esm`);
       const fileset = await mpMod.FilesetResolver.forVisionTasks(`${MP_CDN}/wasm`);
@@ -160,21 +188,41 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         throw new Error('Could not initialize on-device vision tracker.');
       };
 
-      const faceLandmarker = await createLandmarker(
-        mpMod.FaceLandmarker,
-        `${MODEL_BASE}face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-        {
-          numFaces: 1,
-          outputFacialTransformationMatrixes: true,
-          outputFaceBlendshapes: true,
-        }
-      );
+      let faceLandmarker: unknown = null;
+      try {
+        faceLandmarker = await createLandmarker(
+          mpMod.FaceLandmarker,
+          `${MODEL_BASE}face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+          {
+            numFaces: 1,
+            outputFacialTransformationMatrixes: true,
+            outputFaceBlendshapes: true,
+          }
+        );
+      } catch {}
 
-      const handLandmarker = await createLandmarker(
-        mpMod.HandLandmarker,
-        `${MODEL_BASE}hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-        { numHands: 2 }
-      );
+      let handLandmarker: unknown = null;
+      try {
+        handLandmarker = await createLandmarker(
+          mpMod.HandLandmarker,
+          `${MODEL_BASE}hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          { numHands: 2 }
+        );
+      } catch {}
+
+      let poseLandmarker: unknown = null;
+      try {
+        poseLandmarker = await createLandmarker(
+          mpMod.PoseLandmarker,
+          `${MODEL_BASE}pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+          {
+            numPoses: 1,
+            minPoseDetectionConfidence: 0.5,
+            minPosePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          }
+        );
+      } catch {}
 
       let W = video.videoWidth || 640;
       let H = video.videoHeight || 480;
@@ -281,6 +329,22 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       let lastVideoTime = -1;
       let handsP: { p: number[][]; right: boolean }[] = [];
       let prevLook: 'xray' | 'solid' = settingsRef.current.look;
+
+      interface SmoothedJoint {
+        x: number;
+        y: number;
+        z: number;
+        v: number;
+      }
+      const smoothPose: SmoothedJoint[] = Array.from({ length: 33 }, () => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        v: 0,
+      }));
+      let poseOn = false;
+      let poseMiss = 0;
+
       const ovCtx = ovCanvas.getContext('2d');
       const FINGERS = [
         [5, 6, 7, 8],
@@ -313,12 +377,67 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
           const now = performance.now();
-          const fr = (faceLandmarker as { detectForVideo: (v: HTMLVideoElement, t: number) => {
-            facialTransformationMatrixes?: { data: number[] }[];
-            faceBlendshapes?: { categories: { categoryName: string; score: number }[] }[];
-          } }).detectForVideo(video, now);
 
-          const mx = fr.facialTransformationMatrixes?.[0];
+          let mx: { data: number[] } | undefined = undefined;
+          if (faceLandmarker) {
+            try {
+              const fr = (faceLandmarker as {
+                detectForVideo: (v: HTMLVideoElement, t: number) => {
+                  facialTransformationMatrixes?: { data: number[] }[];
+                  faceBlendshapes?: { categories: { categoryName: string; score: number }[] }[];
+                };
+              }).detectForVideo(video, now);
+
+              mx = fr.facialTransformationMatrixes?.[0];
+              const jawCat = fr.faceBlendshapes?.[0]?.categories.find(
+                (c) => c.categoryName === 'jawOpen'
+              );
+              if (jawCat) jawSmooth += (jawCat.score - jawSmooth) * 0.6;
+            } catch {}
+          }
+
+          if (poseLandmarker) {
+            try {
+              const pr = (poseLandmarker as {
+                detectForVideo: (v: HTMLVideoElement, t: number) => {
+                  landmarks?: { x: number; y: number; z: number; visibility?: number }[][];
+                };
+              }).detectForVideo(video, now);
+              const plm = pr.landmarks?.[0];
+              if (plm && plm.length >= 33) {
+                poseOn = true;
+                poseMiss = 0;
+                for (let i = 0; i < 33; i++) {
+                  const raw = plm[i];
+                  const cur = smoothPose[i];
+                  const targetX = raw.x * W;
+                  const targetY = (1 - raw.y) * H;
+                  const targetZ = -raw.z * W;
+                  const vis = raw.visibility ?? 1;
+
+                  if (cur.v < 0.15) {
+                    cur.x = targetX;
+                    cur.y = targetY;
+                    cur.z = targetZ;
+                    cur.v = vis;
+                  } else {
+                    const dx = targetX - cur.x;
+                    const dy = targetY - cur.y;
+                    const dist = Math.hypot(dx, dy);
+                    const alpha = dist < 4 ? 0.35 : dist < 25 ? 0.55 : 0.75;
+                    cur.x += dx * alpha;
+                    cur.y += dy * alpha;
+                    cur.z += (targetZ - cur.z) * alpha;
+                    cur.v += (vis - cur.v) * 0.35;
+                  }
+                }
+              } else if (++poseMiss > 12) {
+                poseOn = false;
+                for (let i = 0; i < 33; i++) smoothPose[i].v = 0;
+              }
+            } catch {}
+          }
+
           if (mx) {
             M.fromArray(mx.data).decompose(pp, qq, ss);
             if (!havePose) {
@@ -327,32 +446,74 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
               sS.copy(ss);
               havePose = true;
             } else {
-              sP.lerp(pp, 0.55);
-              sQ.slerp(qq, 0.55);
-              sS.lerp(ss, 0.55);
+              const dp = sP.distanceTo(pp);
+              const alpha = dp < 0.02 ? 0.38 : 0.65;
+              sP.lerp(pp, alpha);
+              sQ.slerp(qq, alpha);
+              sS.lerp(ss, alpha);
             }
             Msm.compose(sP, sQ, sS);
             faceOn = true;
             miss = 0;
-          } else if (++miss > 8) {
+          } else if (
+            poseOn &&
+            smoothPose[0].v > 0.45 &&
+            smoothPose[11].v > 0.35 &&
+            smoothPose[12].v > 0.35
+          ) {
+            // Full-body projector MR mode: anchor head directly from Pose when far back
+            const nose = smoothPose[0];
+            const lEar = smoothPose[7];
+            const rEar = smoothPose[8];
+            const lSh = smoothPose[11];
+            const rSh = smoothPose[12];
+            const shDist = Math.hypot(lSh.x - rSh.x, lSh.y - rSh.y);
+            const headScale = Math.max(0.65, Math.min(2.4, shDist / 120.0));
+
+            const nx = (nose.x / W) * 2 - 1;
+            const ny = (nose.y / H) * 2 - 1;
+            const headZ = -14.0 / headScale;
+            pp.set(nx * 7.5, ny * 5.5, headZ);
+
+            const earDx = rEar.x - lEar.x;
+            const earDz = rEar.z - lEar.z;
+            const yaw = Math.atan2(earDz, Math.max(1, earDx)) * 0.5;
+            qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            ss.set(headScale, headScale, headScale);
+
+            if (!havePose) {
+              sP.copy(pp);
+              sQ.copy(qq);
+              sS.copy(ss);
+              havePose = true;
+            } else {
+              sP.lerp(pp, 0.45);
+              sQ.slerp(qq, 0.45);
+              sS.lerp(ss, 0.45);
+            }
+            Msm.compose(sP, sQ, sS);
+            faceOn = true;
+            miss = 0;
+          } else if (++miss > 10) {
             faceOn = false;
             havePose = false;
           }
 
-          const jawCat = fr.faceBlendshapes?.[0]?.categories.find(
-            (c) => c.categoryName === 'jawOpen'
-          );
-          if (jawCat) jawSmooth += (jawCat.score - jawSmooth) * 0.6;
+          if (handLandmarker) {
+            try {
+              const hr = (handLandmarker as {
+                detectForVideo: (v: HTMLVideoElement, t: number) => {
+                  landmarks: { x: number; y: number; z: number }[][];
+                  handednesses: { categoryName: string }[][];
+                };
+              }).detectForVideo(video, now);
 
-          const hr = (handLandmarker as { detectForVideo: (v: HTMLVideoElement, t: number) => {
-            landmarks: { x: number; y: number; z: number }[][];
-            handednesses: { categoryName: string }[][];
-          } }).detectForVideo(video, now);
-
-          handsP = hr.landmarks.map((lm, i) => ({
-            p: lm.map((q) => [q.x * W, (1 - q.y) * H, -q.z * W]),
-            right: hr.handednesses[i]?.[0]?.categoryName === 'Left',
-          }));
+              handsP = hr.landmarks.map((lm, i) => ({
+                p: lm.map((q) => [q.x * W, (1 - q.y) * H, -q.z * W]),
+                right: hr.handednesses[i]?.[0]?.categoryName === 'Left',
+              }));
+            } catch {}
+          }
         }
 
         renderer!.clear();
@@ -368,6 +529,9 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         if (isLens && !tip && faceOn) {
           const pv = new THREE.Vector3().setFromMatrixPosition(Msm).project(camP);
           tip = [((pv.x + 1) / 2) * W, ((pv.y + 1) / 2) * H];
+        } else if (isLens && !tip && poseOn && smoothPose[20].v > 0.4) {
+          // Fallback to pose right index finger tip
+          tip = [smoothPose[20].x, smoothPose[20].y];
         }
 
         UH.uLensOn.value = isLens && tip ? 1 : 0;
@@ -465,6 +629,98 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         renderer!.clearDepth();
         renderer!.render(sceneD, camO);
 
+        // Draw Full-Body Radiographic MR Guides for Projector Alignment
+        if (poseOn && ovCtx) {
+          const toScreen = (joint: SmoothedJoint): [number, number] => {
+            const sx = mirror ? W - joint.x : joint.x;
+            const sy = H - joint.y;
+            return [sx, sy];
+          };
+
+          const drawBone = (i1: number, i2: number, alpha = 0.55, width = 2) => {
+            const j1 = smoothPose[i1];
+            const j2 = smoothPose[i2];
+            if (j1.v < 0.25 || j2.v < 0.25) return;
+            const [x1, y1] = toScreen(j1);
+            const [x2, y2] = toScreen(j2);
+            ovCtx.strokeStyle = `rgba(125, 211, 252, ${alpha})`;
+            ovCtx.lineWidth = width;
+            ovCtx.beginPath();
+            ovCtx.moveTo(x1, y1);
+            ovCtx.lineTo(x2, y2);
+            ovCtx.stroke();
+          };
+
+          const drawReticle = (i: number, r = 4, alpha = 0.7) => {
+            const j = smoothPose[i];
+            if (j.v < 0.3) return;
+            const [x, y] = toScreen(j);
+            ovCtx.strokeStyle = `rgba(186, 230, 253, ${alpha})`;
+            ovCtx.fillStyle = `rgba(56, 189, 248, ${alpha * 0.5})`;
+            ovCtx.lineWidth = 1.5;
+            ovCtx.beginPath();
+            ovCtx.arc(x, y, r, 0, Math.PI * 2);
+            ovCtx.fill();
+            ovCtx.stroke();
+          };
+
+          // Spine column (neck midpoint down to sacrum midpoint)
+          const lSh = smoothPose[11];
+          const rSh = smoothPose[12];
+          const lHip = smoothPose[23];
+          const rHip = smoothPose[24];
+          if (lSh.v > 0.3 && rSh.v > 0.3 && lHip.v > 0.3 && rHip.v > 0.3) {
+            const neckX = (lSh.x + rSh.x) * 0.5;
+            const neckY = (lSh.y + rSh.y) * 0.5;
+            const sacrumX = (lHip.x + rHip.x) * 0.5;
+            const sacrumY = (lHip.y + rHip.y) * 0.5;
+            const [nx, ny] = [mirror ? W - neckX : neckX, H - neckY];
+            const [sx, sy] = [mirror ? W - sacrumX : sacrumX, H - sacrumY];
+
+            // Radiographic vertebral spine beam
+            ovCtx.strokeStyle = 'rgba(147, 197, 253, 0.65)';
+            ovCtx.lineWidth = 3;
+            ovCtx.beginPath();
+            ovCtx.moveTo(nx, ny);
+            ovCtx.lineTo(sx, sy);
+            ovCtx.stroke();
+
+            // Thoracic ribcage & heart/lungs pop contour
+            const thoraxMidY = ny + (sy - ny) * 0.38;
+            const ribRadiusX = Math.abs(rSh.x - lSh.x) * 0.42;
+            const ribRadiusY = Math.abs(sy - ny) * 0.28;
+            ovCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            ovCtx.lineWidth = 1.8;
+            ovCtx.beginPath();
+            ovCtx.ellipse(nx, thoraxMidY, ribRadiusX, ribRadiusY, 0, 0, Math.PI * 2);
+            ovCtx.stroke();
+          }
+
+          // Clavicles & Pelvis
+          drawBone(11, 12, 0.6, 2.5);
+          drawBone(23, 24, 0.6, 2.5);
+
+          // Arms
+          drawBone(11, 13, 0.5, 2);
+          drawBone(13, 15, 0.5, 2);
+          drawBone(12, 14, 0.5, 2);
+          drawBone(14, 16, 0.5, 2);
+
+          // Legs
+          drawBone(23, 25, 0.5, 2.2);
+          drawBone(25, 27, 0.5, 2.2);
+          drawBone(27, 29, 0.4, 1.8);
+          drawBone(29, 31, 0.4, 1.8);
+
+          drawBone(24, 26, 0.5, 2.2);
+          drawBone(26, 28, 0.5, 2.2);
+          drawBone(28, 30, 0.4, 1.8);
+          drawBone(30, 32, 0.4, 1.8);
+
+          // Joint calibration reticles
+          [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach((idx) => drawReticle(idx));
+        }
+
         if (isLens && tip && ovCtx) {
           const mx = mirror ? W - tip[0] : tip[0];
           ovCtx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
@@ -486,6 +742,9 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           renderer?.setSize(W, H, false);
           camP.aspect = W / H;
           camP.updateProjectionMatrix();
+          camO.right = W;
+          camO.top = H;
+          camO.updateProjectionMatrix();
         },
       };
 

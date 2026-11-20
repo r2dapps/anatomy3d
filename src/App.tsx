@@ -926,7 +926,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setMirrorOpen(true)}
-            className={`hidden sm:flex w-10 h-10 rounded-xl border items-center justify-center cursor-pointer transition-colors ${floatBtn}`}
+            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${floatBtn}`}
             title="Live Camera X-Ray Mirror"
             aria-label="Open Live X-Ray Mirror"
           >
