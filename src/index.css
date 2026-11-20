@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --canvas-light-center: #f7f9f8;
+    --canvas-light-edge: #dfe5e2;
+    --canvas-xray-center: #0c1622;
+    --canvas-xray-edge: #050a11;
+
+    --surface-card: rgba(255, 255, 255, 0.96);
+    --surface-card-dark: rgba(13, 21, 31, 0.94);
+    --ink-primary: #18212b;
+    --ink-secondary: #4e5d6b;
+    --ink-muted: #768492;
+    --accent-navy: #1d2733;
+    --accent-cyan: #0891b2;
+    --border-hairline: rgba(24, 33, 43, 0.11);
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom accessible clinical range sliders */
+input[type="range"].atlas-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].atlas-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(24, 33, 43, 0.15);
+}
+
+input[type="range"].atlas-slider.atlas-slider-dark::-webkit-slider-runnable-track {
+  background: rgba(148, 210, 235, 0.24);
+}
+
+input[type="range"].atlas-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1d2733;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 32, 0.3);
+  margin-top: -6px;
+  transition: transform 0.12s ease;
+}
+
+input[type="range"].atlas-slider.atlas-slider-dark::-webkit-slider-thumb {
+  background: #38bdf8;
+  border: 2px solid #0b1420;
+}
+
+input[type="range"].atlas-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+
+input[type="range"].atlas-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(24, 33, 43, 0.15);
+}
+
+input[type="range"].atlas-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1d2733;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 32, 0.3);
+}
+
+/* Subtle custom scrollbars for panels */
+.atlas-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.atlas-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.atlas-scroll::-webkit-scrollbar-thumb {
+  background: rgba(24, 33, 43, 0.16);
+  border-radius: 999px;
+}
+
+.atlas-scroll-dark::-webkit-scrollbar-thumb {
+  background: rgba(148, 210, 235, 0.24);
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Human Anatomy 3D",
+  "short_name": "Anatomy 3D",
+  "description": "Interactive full-body 3D human anatomy explorer with Solid PBR & Radiographic X-Ray shaders, anatomical section cuts, and interactive study labs.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ecefed",
+  "theme_color": "#18212b",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Human Anatomy 3D",
+  "description": "Interactive full-body 3D human anatomy explorer with Solid PBR & Radiographic X-Ray WebGL shaders, axial/coronal/sagittal section cuts, fast hide/unhide dissection, and clinical study labs.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

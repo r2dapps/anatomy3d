@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 270" fill="none">
+  <rect width="1060" height="270" rx="16" fill="#0d1824"/>
+  <rect x="0.5" y="0.5" width="1059" height="269" rx="15.5" stroke="#7bc4e8" stroke-opacity="0.2"/>
+  <text x="32" y="38" fill="#7dd3fc" font-family="monospace" font-size="12" font-weight="700" letter-spacing="1.8">REAL-TIME WEBGL RENDERING &amp; DATA PIPELINE</text>
+
+  <!-- Step 1 -->
+  <g transform="translate(32 64)">
+    <rect width="212" height="164" rx="12" fill="#132538" stroke="#38bdf8" stroke-opacity="0.3"/>
+    <text x="18" y="30" fill="#38bdf8" font-family="monospace" font-size="11" font-weight="700">01 · STREAMING</text>
+    <text x="18" y="54" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15" font-weight="700">15 Gzipped Chunks</text>
+    <text x="18" y="80" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• BodyParts3D 4.0 binary</text>
+    <text x="18" y="100" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Quantized Int16 normals</text>
+    <text x="18" y="120" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Native DecompressionStream</text>
+    <text x="18" y="140" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Splash loader under hood</text>
+  </g>
+
+  <path d="M250 146H278" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M272 140L279 146L272 152" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 2 -->
+  <g transform="translate(286 64)">
+    <rect width="224" height="164" rx="12" fill="#132538" stroke="#38bdf8" stroke-opacity="0.3"/>
+    <text x="18" y="30" fill="#38bdf8" font-family="monospace" font-size="11" font-weight="700">02 · GPU BATCHING</text>
+    <text x="18" y="54" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15" font-weight="700">DataTexture State</text>
+    <text x="18" y="80" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• 2,234 parts merged/system</text>
+    <text x="18" y="100" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• RGBAFloat explode + hide</text>
+    <text x="18" y="120" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Single texture upload/change</text>
+    <text x="18" y="140" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Low draw-call budget</text>
+  </g>
+
+  <path d="M516 146H544" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M538 140L545 146L538 152" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 3 -->
+  <g transform="translate(552 64)">
+    <rect width="224" height="164" rx="12" fill="#132538" stroke="#38bdf8" stroke-opacity="0.3"/>
+    <text x="18" y="30" fill="#38bdf8" font-family="monospace" font-size="11" font-weight="700">03 · DUAL SHADERS</text>
+    <text x="18" y="54" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15" font-weight="700">PBR + X-Ray + Cuts</text>
+    <text x="18" y="80" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Studio PMREM PBR lighting</text>
+    <text x="18" y="100" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Fresnel Radiographic X-Ray</text>
+    <text x="18" y="120" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Zero-recompile X/Y/Z slices</text>
+    <text x="18" y="140" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Cardiac &amp; breath GPU pulse</text>
+  </g>
+
+  <path d="M782 146H810" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M804 140L811 146L804 152" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 4 -->
+  <g transform="translate(818 64)">
+    <rect width="210" height="164" rx="12" fill="#132538" stroke="#38bdf8" stroke-opacity="0.3"/>
+    <text x="18" y="30" fill="#38bdf8" font-family="monospace" font-size="11" font-weight="700">04 · ALL DEVICES</text>
+    <text x="18" y="54" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15" font-weight="700">Adaptive Runtime</text>
+    <text x="18" y="80" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• 0% idle GPU on demand</text>
+    <text x="18" y="100" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Mobile/Tablet DPR capping</text>
+    <text x="18" y="120" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• Software-GL fence pacing</text>
+    <text x="18" y="140" fill="#9cc1da" font-family="system-ui, sans-serif" font-size="12">• 1:1m Quest 2 WebXR root</text>
+  </g>
+</svg>

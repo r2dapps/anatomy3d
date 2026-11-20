@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>Human Anatomy 3D — Interactive Full-Body WebGL Explorer</title>
+    <meta
+      name="description"
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+    />
+    <meta
+      name="keywords"
+      content="Human Anatomy 3D, 3D anatomy atlas, interactive human body, WebGL radiographic X-ray shader, BodyParts3D, medical education, cardiology, pulmonology, orthopedics, dentistry, physiotherapy, WebXR anatomy"
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#18212b" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="manifest" href="./site.webmanifest" />
+
+    <!-- OpenGraph Social Card -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Human Anatomy 3D" />
+    <meta property="og:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer" />
+    <meta
+      property="og:description"
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+    />
+    <meta property="og:image" content="/og-card.svg" />
+
+    <!-- Twitter / X Social Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Human Anatomy 3D — Interactive Full-Body WebGL Explorer" />
+    <meta
+      name="twitter:description"
+      content="Explore 2,234 full-body 3D anatomical structures with Solid PBR &amp; Radiographic X-Ray shaders, axial/coronal/sagittal section cuts, and interactive study quizzes."
+    />
+    <meta name="twitter:image" content="/og-card.svg" />
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Human Anatomy 3D",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "All",
+        "browserRequirements": "Requires WebGL2",
+        "isAccessibleForFree": true,
+        "description": "Interactive full-body 3D human anatomy explorer featuring 2,234 BodyParts3D meshes across 15 systems, Solid PBR and Radiographic X-Ray shaders, real-time X/Y/Z anatomical section cuts, guided clinical tours, and interactive identification quizzes.",
+        "featureList": [
+          "2,234 full-body 3D anatomical structures across 15 systems",
+          "Solid PBR and Radiographic X-Ray WebGL shaders",
+          "Real-time Sagittal (X), Axial (Y), and Coronal (Z) section cuts",
+          "One-click peel hide and instant unhide dissection workflow",
+          "Guided specialty study tours and 3D identification quizzes for Cardiology, Pulmonology, Orthopedics, Physiotherapy, and Dentistry",
+          "Adaptive mobile, tablet, and low-end WebGL performance budgets"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+
+    <!-- Dynamic Canonical URL for SPA Hosting -->
+    <script>
+      (function () {
+        try {
+          var url = window.location.origin + window.location.pathname;
+          var link = document.createElement('link');
+          link.rel = 'canonical';
+          link.href = url;
+          document.head.appendChild(link);
+          var og = document.createElement('meta');
+          og.setAttribute('property', 'og:url');
+          og.content = url;
+          document.head.appendChild(og);
+        } catch (_) {}
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-[#ecefed] text-[#18212b] antialiased selection:bg-[#1d2733] selection:text-white overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
