@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { Camera, RefreshCw, ShieldCheck, VideoOff } from 'lucide-react';
+import {
+  ArrowLeft,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  ShieldCheck,
+  Tag,
+  VideoOff,
+} from 'lucide-react';
 import {
   ANATOMY_CATALOG,
   JAW_PIVOT,
@@ -14,7 +23,7 @@ interface XRayMirrorViewProps {
   onBackToAtlas: () => void;
 }
 
-type MirrorReveal = 'lens' | 'whole' | 'left' | 'right' | 'top' | 'lower';
+type MirrorReveal = 'whole' | 'lens' | 'left' | 'right' | 'top' | 'lower';
 
 const MP_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 const MODEL_BASE = 'https://storage.googleapis.com/mediapipe-models/';
@@ -56,6 +65,7 @@ const MIRROR_FS = `
 `;
 
 export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -64,19 +74,44 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState('Camera stays on your device — zero frames leave this browser.');
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-mirroring and camera controls
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
+  const [mirror, setMirror] = useState(true);
+
+  // Minimalist controls - default to whole head
   const [look, setLook] = useState<'xray' | 'solid'>('xray');
-  const [reveal, setReveal] = useState<MirrorReveal>('lens');
+  const [reveal, setReveal] = useState<MirrorReveal>('whole');
   const [explode, setExplode] = useState(0);
   const [lensSize, setLensSize] = useState(0.24);
   const [brightness, setBrightness] = useState(1.1);
+  const [showLabels, setShowLabels] = useState(true);
+  const [dockCollapsed, setDockCollapsed] = useState(false);
 
-  const settingsRef = useRef({ look, reveal, explode, lensSize, brightness, facing });
-  settingsRef.current = { look, reveal, explode, lensSize, brightness, facing };
+  const settingsRef = useRef({
+    look,
+    reveal,
+    explode,
+    lensSize,
+    brightness,
+    facing,
+    mirror,
+    showLabels,
+  });
+  settingsRef.current = {
+    look,
+    reveal,
+    explode,
+    lensSize,
+    brightness,
+    facing,
+    mirror,
+    showLabels,
+  };
 
   const runtimeRef = useRef<{
     stop: () => void;
-    switchCamera: (nextFacing: 'user' | 'environment') => Promise<void>;
+    switchCamera: () => Promise<void>;
   } | null>(null);
 
   useEffect(() => {
@@ -85,7 +120,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
     };
   }, []);
 
-  const startMirror = async () => {
+  const startMirror = useCallback(async () => {
     if (starting) return;
     setStarting(true);
     setError(null);
@@ -107,49 +142,63 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
     };
 
     try {
+      const container = containerRef.current;
       const video = videoRef.current;
       const glCanvas = glCanvasRef.current;
       const ovCanvas = overlayRef.current;
-      if (!video || !glCanvas || !ovCanvas) throw new Error('Mirror elements not mounted.');
+      if (!container || !video || !glCanvas || !ovCanvas) {
+        throw new Error('Mirror display elements not mounted.');
+      }
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Camera access is not supported in this browser.');
       }
 
       setStatus('Requesting local camera access…');
-      const openCam = async (mode: 'user' | 'environment') => {
+
+      // Robust camera initialization with fallback cascade
+      const openCam = async (prefMode: 'user' | 'environment') => {
         if (stream) {
           stream.getTracks().forEach((t) => t.stop());
           await new Promise((r) => setTimeout(r, 60));
         }
-        const prefFacing = mode || 'user';
+
         let s: MediaStream | null = null;
         const constraints: MediaStreamConstraints[] = [
           {
             video: {
-              facingMode: { ideal: prefFacing },
+              facingMode: { ideal: prefMode },
               width: { ideal: 1920, max: 1920 },
               height: { ideal: 1080, max: 1080 },
             },
             audio: false,
           },
-          { video: { facingMode: prefFacing }, audio: false },
+          { video: { facingMode: prefMode }, audio: false },
           { video: true, audio: false },
         ];
+
         for (const c of constraints) {
           try {
             s = await navigator.mediaDevices.getUserMedia(c);
             if (s) break;
           } catch {}
         }
-        if (!s) throw new Error('Camera access failed or unavailable on this device.');
+
+        if (!s) throw new Error('Camera access failed or was denied on this device.');
         stream = s;
+
         const track = stream.getVideoTracks()[0];
+        let actualFacing = prefMode;
         if (track?.getSettings) {
-          const settings = track.getSettings();
-          if (settings.facingMode) {
-            setFacing(settings.facingMode as 'user' | 'environment');
-          }
+          const st = track.getSettings();
+          if (st.facingMode) actualFacing = st.facingMode as 'user' | 'environment';
         }
+
+        const isMirror = actualFacing !== 'environment';
+        setFacing(actualFacing);
+        setMirror(isMirror);
+        settingsRef.current.facing = actualFacing;
+        settingsRef.current.mirror = isMirror;
+
         video.srcObject = stream;
         await video.play();
         if (!video.videoWidth) {
@@ -161,11 +210,10 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
       await openCam(settingsRef.current.facing);
 
-      setStatus('Loading BodyParts3D 3D meshes…');
+      setStatus('Loading BodyParts3D anatomical structures…');
       const geomMap = await loadAnatomyGeometries();
 
-      setStatus('Initializing on-device MediaPipe vision tracking…');
-      // Dynamic ESM import from CDN for optional live camera mode only
+      setStatus('Initializing on-device MediaPipe vision models…');
       const mpMod = await import(/* @vite-ignore */ `${MP_CDN}/+esm`);
       const fileset = await mpMod.FilesetResolver.forVisionTasks(`${MP_CDN}/wasm`);
 
@@ -181,11 +229,9 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
               runningMode: 'VIDEO',
               ...extra,
             });
-          } catch {
-            // Try next delegate
-          }
+          } catch {}
         }
-        throw new Error('Could not initialize on-device vision tracker.');
+        throw new Error('Could not initialize vision model.');
       };
 
       let faceLandmarker: unknown = null;
@@ -224,20 +270,34 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         );
       } catch {}
 
-      let W = video.videoWidth || 640;
-      let H = video.videoHeight || 480;
-      glCanvas.width = ovCanvas.width = W;
-      glCanvas.height = ovCanvas.height = H;
+      let Cw = container.clientWidth || window.innerWidth;
+      let Ch = container.clientHeight || window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-      renderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: true, antialias: true });
+      glCanvas.width = Math.round(Cw * dpr);
+      glCanvas.height = Math.round(Ch * dpr);
+      ovCanvas.width = Math.round(Cw * dpr);
+      ovCanvas.height = Math.round(Ch * dpr);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: glCanvas,
+        alpha: true,
+        antialias: true,
+        preserveDrawingBuffer: true,
+      });
       renderer.autoClear = false;
       renderer.setClearColor(0x000000, 0);
-      renderer.setSize(W, H, false);
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(Cw, Ch, false);
 
       const sceneH = new THREE.Scene();
       const sceneD = new THREE.Scene();
-      const camP = new THREE.PerspectiveCamera(63, W / H, 0.1, 1000);
-      const camO = new THREE.OrthographicCamera(0, W, H, 0, -3000, 3000);
+      const camP = new THREE.PerspectiveCamera(63, Cw / Ch, 0.1, 1000);
+      camP.position.set(0, 0, 0);
+      camP.lookAt(0, 0, -1);
+
+      const camO = new THREE.OrthographicCamera(0, Cw, Ch, 0, -3000, 3000);
+
       const headG = new THREE.Group();
       headG.matrixAutoUpdate = false;
       sceneH.add(headG);
@@ -308,6 +368,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
 
       const M = new THREE.Matrix4();
       const Msm = new THREE.Matrix4();
+      const HM = new THREE.Matrix4();
       const Jm = new THREE.Matrix4();
       const JR = new THREE.Matrix4();
       const JT = new THREE.Matrix4();
@@ -353,6 +414,45 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         [17, 18, 19, 20],
       ];
 
+      // Exact mathematical alignment between video object-fit: cover and WebGL camera
+      const updateDimensions = () => {
+        if (!container || !video || !renderer) return;
+        const curCw = container.clientWidth || window.innerWidth;
+        const curCh = container.clientHeight || window.innerHeight;
+        const curDpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        if (curCw !== Cw || curCh !== Ch) {
+          Cw = curCw;
+          Ch = curCh;
+          glCanvas.width = Math.round(Cw * curDpr);
+          glCanvas.height = Math.round(Ch * curDpr);
+          ovCanvas.width = Math.round(Cw * curDpr);
+          ovCanvas.height = Math.round(Ch * curDpr);
+          renderer.setPixelRatio(curDpr);
+          renderer.setSize(Cw, Ch, false);
+        }
+
+        const Vw = video.videoWidth || 1280;
+        const Vh = video.videoHeight || 720;
+        const scale = Math.max(Cw / Vw, Ch / Vh);
+        const Rh = Vh * scale;
+
+        // Effective FOV accounting for object-cover crop
+        const nominalFovRad = (63 * Math.PI) / 180;
+        const effectiveFovRad = 2 * Math.atan(Math.tan(nominalFovRad / 2) * (Ch / Rh));
+        camP.fov = (effectiveFovRad * 180) / Math.PI;
+        camP.aspect = Cw / Ch;
+        camP.updateProjectionMatrix();
+
+        camO.left = 0;
+        camO.right = Cw;
+        camO.bottom = Ch;
+        camO.top = 0;
+        camO.updateProjectionMatrix();
+      };
+
+      window.addEventListener('resize', updateDimensions);
+
       const applyLookMode = (mode: 'xray' | 'solid') => {
         const isX = mode === 'xray';
         for (const mat of materials) {
@@ -367,12 +467,22 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       const renderLoop = () => {
         rafId = requestAnimationFrame(renderLoop);
         const cfg = settingsRef.current;
-        const mirror = cfg.facing === 'user';
+        const isMirror = cfg.mirror;
 
         if (cfg.look !== prevLook) {
           prevLook = cfg.look;
           applyLookMode(cfg.look);
         }
+
+        updateDimensions();
+
+        const Vw = video.videoWidth || 1280;
+        const Vh = video.videoHeight || 720;
+        const covScale = Math.max(Cw / Vw, Ch / Vh);
+        const Rw = Vw * covScale;
+        const Rh = Vh * covScale;
+        const Ox = (Cw - Rw) / 2;
+        const Oy = (Ch - Rh) / 2;
 
         if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
@@ -410,9 +520,10 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
                 for (let i = 0; i < 33; i++) {
                   const raw = plm[i];
                   const cur = smoothPose[i];
-                  const targetX = raw.x * W;
-                  const targetY = (1 - raw.y) * H;
-                  const targetZ = -raw.z * W;
+                  // Map directly to visible screen pixels
+                  const targetX = Ox + raw.x * Rw;
+                  const targetY = Oy + raw.y * Rh;
+                  const targetZ = -raw.z * Rw;
                   const vis = raw.visibility ?? 1;
 
                   if (cur.v < 0.15) {
@@ -470,8 +581,8 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             const shDist = Math.hypot(lSh.x - rSh.x, lSh.y - rSh.y);
             const headScale = Math.max(0.65, Math.min(2.4, shDist / 120.0));
 
-            const nx = (nose.x / W) * 2 - 1;
-            const ny = (nose.y / H) * 2 - 1;
+            const nx = (nose.x / Cw) * 2 - 1;
+            const ny = -(nose.y / Ch) * 2 + 1;
             const headZ = -14.0 / headScale;
             pp.set(nx * 7.5, ny * 5.5, headZ);
 
@@ -509,7 +620,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
               }).detectForVideo(video, now);
 
               handsP = hr.landmarks.map((lm, i) => ({
-                p: lm.map((q) => [q.x * W, (1 - q.y) * H, -q.z * W]),
+                p: lm.map((q) => [Ox + q.x * Rw, Oy + q.y * Rh, -q.z * Rw]),
                 right: hr.handednesses[i]?.[0]?.categoryName === 'Left',
               }));
             } catch {}
@@ -517,7 +628,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         }
 
         renderer!.clear();
-        ovCtx?.clearRect(0, 0, W, H);
+        ovCtx?.clearRect(0, 0, Cw, Ch);
 
         UH.uBright.value = UD.uBright.value = cfg.brightness;
         UH.uXray.value = UD.uXray.value = cfg.look === 'xray' ? 1 : 0;
@@ -525,31 +636,37 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         const isLens = cfg.reveal === 'lens';
         const tip0 = handsP[0]?.p[8] ?? null;
         let tip = tip0;
-        const R = cfg.lensSize * H;
+        const R = cfg.lensSize * Ch;
         if (isLens && !tip && faceOn) {
           const pv = new THREE.Vector3().setFromMatrixPosition(Msm).project(camP);
-          tip = [((pv.x + 1) / 2) * W, ((pv.y + 1) / 2) * H];
+          tip = [((pv.x + 1) / 2) * Cw, ((-pv.y + 1) / 2) * Ch];
         } else if (isLens && !tip && poseOn && smoothPose[20].v > 0.4) {
-          // Fallback to pose right index finger tip
           tip = [smoothPose[20].x, smoothPose[20].y];
         }
 
         UH.uLensOn.value = isLens && tip ? 1 : 0;
-        if (tip) UH.uLens.value.set(tip[0], tip[1], R, 0.22);
+        if (tip) {
+          // Pass lens center to fragment shader in gl_FragCoord coordinates
+          UH.uLens.value.set(tip[0], Ch - tip[1], R, 0.22);
+        }
 
         headG.visible = faceOn && !(isLens && !tip);
         UH.uClip.value = 0;
+
         if (faceOn) {
-          headG.matrix.copy(Msm);
+          HM.copy(Msm);
+          headG.matrix.copy(HM);
           headG.matrixWorldNeedsUpdate = true;
-          O.setFromMatrixPosition(Msm);
-          XD.set(1, 0, 0).transformDirection(Msm);
-          YD.set(0, 1, 0).transformDirection(Msm);
-          const sx = XD.x * (mirror ? -1 : 1) > 0 ? 1 : -1;
+          O.setFromMatrixPosition(HM);
+          XD.set(1, 0, 0).transformDirection(HM);
+          YD.set(0, 1, 0).transformDirection(HM);
+
+          const sx = XD.x * (isMirror ? -1 : 1) > 0 ? 1 : -1;
           const Rr = XD.clone().multiplyScalar(sx);
           const k = sS.x;
           let n: THREE.Vector3 | null = null;
           const p0 = O.clone();
+
           if (cfg.reveal === 'left') n = Rr.clone().negate();
           else if (cfg.reveal === 'right') n = Rr.clone();
           else if (cfg.reveal === 'top') {
@@ -559,6 +676,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             n = YD.clone().negate();
             p0.addScaledVector(YD, PLANE_NOSE_Y * k);
           }
+
           if (n) {
             UH.uPlane.value.set(n.x, n.y, n.z, -n.dot(p0));
             UH.uClip.value = 1;
@@ -582,7 +700,7 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           }
         }
 
-        // Hand bones
+        // Hand bones in 3D
         handSlots.forEach((slot, idx) => {
           const h = handsP[idx];
           slot.grp.visible = false;
@@ -629,42 +747,33 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
         renderer!.clearDepth();
         renderer!.render(sceneD, camO);
 
-        // Draw Full-Body Radiographic MR Guides for Projector Alignment
+        // Radiographic Mixed Reality Projection & Educational Labels
         if (poseOn && ovCtx) {
-          const toScreen = (joint: SmoothedJoint): [number, number] => {
-            const sx = mirror ? W - joint.x : joint.x;
-            const sy = H - joint.y;
-            return [sx, sy];
-          };
-
           const drawBone = (i1: number, i2: number, alpha = 0.55, width = 2) => {
             const j1 = smoothPose[i1];
             const j2 = smoothPose[i2];
             if (j1.v < 0.25 || j2.v < 0.25) return;
-            const [x1, y1] = toScreen(j1);
-            const [x2, y2] = toScreen(j2);
             ovCtx.strokeStyle = `rgba(125, 211, 252, ${alpha})`;
             ovCtx.lineWidth = width;
             ovCtx.beginPath();
-            ovCtx.moveTo(x1, y1);
-            ovCtx.lineTo(x2, y2);
+            ovCtx.moveTo(j1.x, j1.y);
+            ovCtx.lineTo(j2.x, j2.y);
             ovCtx.stroke();
           };
 
           const drawReticle = (i: number, r = 4, alpha = 0.7) => {
             const j = smoothPose[i];
             if (j.v < 0.3) return;
-            const [x, y] = toScreen(j);
             ovCtx.strokeStyle = `rgba(186, 230, 253, ${alpha})`;
             ovCtx.fillStyle = `rgba(56, 189, 248, ${alpha * 0.5})`;
             ovCtx.lineWidth = 1.5;
             ovCtx.beginPath();
-            ovCtx.arc(x, y, r, 0, Math.PI * 2);
+            ovCtx.arc(j.x, j.y, r, 0, Math.PI * 2);
             ovCtx.fill();
             ovCtx.stroke();
           };
 
-          // Spine column (neck midpoint down to sacrum midpoint)
+          // Vertebral Spine Column (midpoint of shoulders down to pelvis)
           const lSh = smoothPose[11];
           const rSh = smoothPose[12];
           const lHip = smoothPose[23];
@@ -674,25 +783,23 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
             const neckY = (lSh.y + rSh.y) * 0.5;
             const sacrumX = (lHip.x + rHip.x) * 0.5;
             const sacrumY = (lHip.y + rHip.y) * 0.5;
-            const [nx, ny] = [mirror ? W - neckX : neckX, H - neckY];
-            const [sx, sy] = [mirror ? W - sacrumX : sacrumX, H - sacrumY];
 
             // Radiographic vertebral spine beam
             ovCtx.strokeStyle = 'rgba(147, 197, 253, 0.65)';
             ovCtx.lineWidth = 3;
             ovCtx.beginPath();
-            ovCtx.moveTo(nx, ny);
-            ovCtx.lineTo(sx, sy);
+            ovCtx.moveTo(neckX, neckY);
+            ovCtx.lineTo(sacrumX, sacrumY);
             ovCtx.stroke();
 
-            // Thoracic ribcage & heart/lungs pop contour
-            const thoraxMidY = ny + (sy - ny) * 0.38;
+            // Thoracic ribcage & Cardiopulmonary cavity
+            const thoraxMidY = neckY + (sacrumY - neckY) * 0.38;
             const ribRadiusX = Math.abs(rSh.x - lSh.x) * 0.42;
-            const ribRadiusY = Math.abs(sy - ny) * 0.28;
+            const ribRadiusY = Math.abs(sacrumY - neckY) * 0.28;
             ovCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
             ovCtx.lineWidth = 1.8;
             ovCtx.beginPath();
-            ovCtx.ellipse(nx, thoraxMidY, ribRadiusX, ribRadiusY, 0, 0, Math.PI * 2);
+            ovCtx.ellipse(neckX, thoraxMidY, ribRadiusX, ribRadiusY, 0, 0, Math.PI * 2);
             ovCtx.stroke();
           }
 
@@ -700,13 +807,13 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           drawBone(11, 12, 0.6, 2.5);
           drawBone(23, 24, 0.6, 2.5);
 
-          // Arms
+          // Arms: Shoulder -> Elbow -> Wrist
           drawBone(11, 13, 0.5, 2);
           drawBone(13, 15, 0.5, 2);
           drawBone(12, 14, 0.5, 2);
           drawBone(14, 16, 0.5, 2);
 
-          // Legs
+          // Legs: Hip -> Knee -> Ankle -> Feet
           drawBone(23, 25, 0.5, 2.2);
           drawBone(25, 27, 0.5, 2.2);
           drawBone(27, 29, 0.4, 1.8);
@@ -717,40 +824,101 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
           drawBone(28, 30, 0.4, 1.8);
           drawBone(30, 32, 0.4, 1.8);
 
-          // Joint calibration reticles
+          // Articulation nodes
           [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28].forEach((idx) => drawReticle(idx));
+
+          // Educational 3D Anatomical Labels (for classroom instruction)
+          if (cfg.showLabels) {
+            const drawCallout = (
+              x: number,
+              y: number,
+              title: string,
+              subtitle: string,
+              side: 'left' | 'right' = 'left'
+            ) => {
+              const dx = side === 'left' ? -65 : 65;
+              const tx = x + dx;
+              const ty = y - 10;
+
+              ovCtx.strokeStyle = 'rgba(125, 211, 252, 0.7)';
+              ovCtx.lineWidth = 1;
+              ovCtx.beginPath();
+              ovCtx.moveTo(x, y);
+              ovCtx.lineTo(tx, ty);
+              ovCtx.lineTo(tx + (side === 'left' ? -30 : 30), ty);
+              ovCtx.stroke();
+
+              ovCtx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+              ovCtx.fillStyle = '#f8fafc';
+              ovCtx.textAlign = side === 'left' ? 'right' : 'left';
+              ovCtx.fillText(title, tx + (side === 'left' ? -35 : 35), ty + 3);
+
+              ovCtx.font = '9.5px system-ui, -apple-system, sans-serif';
+              ovCtx.fillStyle = '#94a3b8';
+              ovCtx.fillText(subtitle, tx + (side === 'left' ? -35 : 35), ty + 15);
+            };
+
+            // Head / Neurocranium
+            if (smoothPose[0].v > 0.4) {
+              const jawAngleDeg = Math.round(jawSmooth * 24);
+              drawCallout(
+                smoothPose[0].x,
+                smoothPose[0].y - 25,
+                'Neurocranium & Brain',
+                `TMJ Open: ${jawAngleDeg}°`,
+                'left'
+              );
+            }
+
+            // Thorax / Cardiopulmonary
+            if (lSh.v > 0.3 && rSh.v > 0.3) {
+              const cx = (lSh.x + rSh.x) * 0.5;
+              const cy = (lSh.y + rSh.y) * 0.5 + 40;
+              drawCallout(cx, cy, 'Thoracic Cavity', 'Pulmonary & Cardiac Field', 'right');
+            }
+
+            // Pelvic Girdle
+            if (lHip.v > 0.3 && rHip.v > 0.3) {
+              const px = (lHip.x + rHip.x) * 0.5;
+              const py = (lHip.y + rHip.y) * 0.5;
+              drawCallout(px, py, 'Pelvic Girdle', 'Sacrum & Acetabulum', 'left');
+            }
+
+            // Femur / Lower extremity
+            if (smoothPose[25].v > 0.3) {
+              drawCallout(
+                smoothPose[25].x,
+                smoothPose[25].y,
+                'Knee Articulation',
+                'Patella & Femur',
+                'right'
+              );
+            }
+          }
         }
 
+        // Circular fingertip lens indicator
         if (isLens && tip && ovCtx) {
-          const mx = mirror ? W - tip[0] : tip[0];
-          ovCtx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+          ovCtx.strokeStyle = 'rgba(125, 211, 252, 0.6)';
           ovCtx.lineWidth = 2;
           ovCtx.beginPath();
-          ovCtx.arc(mx, H - tip[1], R, 0, Math.PI * 2);
+          ovCtx.arc(tip[0], tip[1], R, 0, Math.PI * 2);
           ovCtx.stroke();
         }
       };
 
       runtimeRef.current = {
         stop: cleanup,
-        switchCamera: async (nextFacing) => {
-          await openCam(nextFacing);
-          W = video.videoWidth || 640;
-          H = video.videoHeight || 480;
-          glCanvas.width = ovCanvas.width = W;
-          glCanvas.height = ovCanvas.height = H;
-          renderer?.setSize(W, H, false);
-          camP.aspect = W / H;
-          camP.updateProjectionMatrix();
-          camO.right = W;
-          camO.top = H;
-          camO.updateProjectionMatrix();
+        switchCamera: async () => {
+          const next = settingsRef.current.facing === 'user' ? 'environment' : 'user';
+          await openCam(next);
+          updateDimensions();
         },
       };
 
       setStarted(true);
       setStarting(false);
-      setStatus('Live tracking active — raise your hand to move the X-ray lens.');
+      setStatus('Live tracking active — whole 3D anatomical structures mapped.');
       renderLoop();
     } catch (err) {
       cleanup();
@@ -762,192 +930,257 @@ export function XRayMirrorView({ onBackToAtlas }: XRayMirrorViewProps) {
       );
       setStatus('Camera unavailable — you can return to the interactive 3D Atlas anytime.');
     }
-  };
+  }, [starting]);
 
   const handleFlipCamera = async () => {
-    const next = facing === 'user' ? 'environment' : 'user';
-    setFacing(next);
     try {
-      await runtimeRef.current?.switchCamera(next);
+      await runtimeRef.current?.switchCamera();
     } catch {
       setError('Could not switch camera on this device.');
     }
   };
 
   return (
-    <div className="w-full h-full flex flex-col lg:flex-row items-center justify-center gap-5 p-4 lg:p-6 overflow-y-auto bg-[#e9edeb]">
-      {/* Camera Stage */}
-      <div className="relative w-full max-w-[820px] aspect-[4/3] rounded-2xl overflow-hidden bg-[#08101a] shadow-[0_18px_48px_rgba(24,33,43,0.18)] border border-white/60">
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{
-            transform: facing === 'user' ? 'scaleX(-1)' : 'none',
-            filter: 'brightness(0.76)',
-          }}
-        />
-        <canvas
-          ref={glCanvasRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ transform: facing === 'user' ? 'scaleX(-1)' : 'none' }}
-        />
-        <canvas
-          ref={overlayRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-        />
+    <div
+      ref={containerRef}
+      className="relative w-full h-full overflow-hidden bg-[#070d14] select-none"
+    >
+      {/* Full-Screen Camera Video Feed */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{
+          transform: mirror ? 'scaleX(-1)' : 'none',
+          filter: 'brightness(0.78)',
+        }}
+      />
 
-        {!started && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-6 bg-gradient-to-b from-[#f7f9f8] to-[#e3e8e6] text-[#18212b]">
-            <div className="w-12 h-12 rounded-2xl bg-[#1d2733] text-white flex items-center justify-center mb-4">
-              <Camera className="w-6 h-6" />
-            </div>
-            <h2 className="font-display text-2xl font-bold tracking-tight">
-              Live X-Ray Mirror Mode
-            </h2>
-            <p className="text-[13.5px] text-[#556472] max-w-md mt-2 leading-relaxed">
-              Projects the real 49-structure BodyParts3D skull, brain, facial muscles, and hand skeleton directly onto your camera feed with live jaw &amp; fingertip lens tracking.
-            </p>
+      {/* 3D WebGL Canvas */}
+      <canvas
+        ref={glCanvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ transform: mirror ? 'scaleX(-1)' : 'none' }}
+      />
 
-            {error && (
-              <div className="mt-4 px-4 py-2.5 rounded-xl bg-[#fef2f2] border border-[#dc2626]/25 text-[#991b1b] text-[12.5px] max-w-md flex items-center gap-2">
-                <VideoOff className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+      {/* Radiographic Mixed Reality Overlay */}
+      <canvas
+        ref={overlayRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ transform: mirror ? 'scaleX(-1)' : 'none' }}
+      />
 
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-5">
-              <button
-                type="button"
-                disabled={starting}
-                onClick={startMirror}
-                className="px-6 py-3 rounded-xl bg-[#1d2733] hover:bg-[#2a3848] disabled:opacity-50 text-white text-[13.5px] font-semibold cursor-pointer transition-colors"
-              >
-                {starting ? 'Initializing Camera & Tracker…' : 'Start Live X-Ray Camera'}
-              </button>
-              <button
-                type="button"
-                onClick={onBackToAtlas}
-                className="px-5 py-3 rounded-xl bg-white hover:bg-[#f2f5f4] border border-[#18212b]/12 text-[#18212b] text-[13.5px] font-medium cursor-pointer transition-colors"
-              >
-                Back to 3D Atlas
-              </button>
-            </div>
-
-            <p className="text-[11.5px] text-[#667482] mt-4 inline-flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#059669]" />
-              <span>{status}</span>
-            </p>
+      {/* Pre-Start Splash / Permission Modal */}
+      {!started && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center text-center p-6 bg-gradient-to-b from-[#0a111e]/90 to-[#050911]/95 text-white backdrop-blur-md">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center mb-4 shadow-xl">
+            <Camera className="w-7 h-7 text-sky-400" />
           </div>
-        )}
-      </div>
+          <h2 className="font-display text-2xl font-bold tracking-tight">Live X-Ray Mirror Mode</h2>
+          <p className="text-[13.5px] text-slate-300 max-w-md mt-2.5 leading-relaxed">
+            Projects the full 49-structure BodyParts3D skull, brain, teeth, and hand skeleton directly
+            onto your camera feed with live jaw articulation and full-body mixed reality tracking.
+          </p>
 
-      {/* Compact Mirror Controls */}
-      <div className="w-full max-w-[820px] lg:w-[290px] bg-white/95 border border-[#18212b]/10 rounded-2xl p-4 shadow-[0_8px_28px_rgba(24,33,43,0.07)] space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-display text-[14px] font-semibold">X-Ray Mirror Controls</h3>
+          {error && (
+            <div className="mt-4 px-4 py-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-[12.5px] max-w-md flex items-center gap-2">
+              <VideoOff className="w-4 h-4 shrink-0 text-red-400" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+            <button
+              type="button"
+              disabled={starting}
+              onClick={startMirror}
+              className="px-6 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 text-[13.5px] font-bold cursor-pointer transition-colors shadow-lg shadow-sky-500/20"
+            >
+              {starting ? 'Initializing Vision Tracker…' : 'Start Live X-Ray Camera'}
+            </button>
+            <button
+              type="button"
+              onClick={onBackToAtlas}
+              className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-[13.5px] font-medium cursor-pointer transition-colors"
+            >
+              Back to 3D Atlas
+            </button>
+          </div>
+
+          <p className="text-[11.5px] text-slate-400 mt-4 inline-flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{status}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Floating Top Minimal Header */}
+      <header className="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-20 flex items-center justify-between pointer-events-none">
+        <button
+          type="button"
+          onClick={onBackToAtlas}
+          className="pointer-events-auto h-9 px-3 rounded-xl bg-[#0f172a]/80 hover:bg-[#1e293b] text-white text-[12px] font-semibold border border-white/15 backdrop-blur-md flex items-center gap-1.5 shadow-lg transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>3D Atlas</span>
+        </button>
+
+        <div className="pointer-events-auto px-3 py-1.5 rounded-xl bg-[#0f172a]/70 border border-white/10 backdrop-blur-md flex items-center gap-2 text-white shadow-lg">
+          <span className="font-display text-[13px] font-bold tracking-tight">Human Anatomy 3D</span>
+          <span className="text-[10px] uppercase tracking-wider font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold">
+            Live AR
+          </span>
+        </div>
+
+        <div className="pointer-events-auto flex items-center gap-1.5">
           {started && (
             <button
               type="button"
               onClick={handleFlipCamera}
-              className="p-2 rounded-lg bg-[#f3f5f4] hover:bg-[#e7ecea] text-[#18212b] cursor-pointer"
-              title="Flip camera"
-              aria-label="Flip camera"
+              className="w-9 h-9 rounded-xl bg-[#0f172a]/80 hover:bg-[#1e293b] text-white border border-white/15 backdrop-blur-md flex items-center justify-center shadow-lg transition-colors cursor-pointer"
+              title="Flip Camera"
+              aria-label="Flip Camera"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
           )}
-        </div>
 
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#eaeeec]">
-          {(['xray', 'solid'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setLook(m)}
-              className={`rounded-lg py-1.5 text-[12px] font-medium cursor-pointer ${
-                look === m
-                  ? 'bg-white text-[#18212b] shadow-sm'
-                  : 'text-[#556472] hover:text-[#18212b]'
-              }`}
-            >
-              {m === 'xray' ? 'X-Ray Shader' : 'Solid Model'}
-            </button>
-          ))}
-        </div>
-
-        <div>
-          <label htmlFor="mirror-reveal" className="block text-[11.5px] text-[#667482] mb-1">
-            Reveal Mode
-          </label>
-          <select
-            id="mirror-reveal"
-            value={reveal}
-            onChange={(e) => setReveal(e.target.value as MirrorReveal)}
-            className="w-full rounded-xl px-3 py-2 text-[12.5px] font-medium bg-[#f6f8f7] border border-[#18212b]/12 text-[#18212b]"
+          <button
+            type="button"
+            onClick={() => setShowLabels((v) => !v)}
+            className={`h-9 px-2.5 rounded-xl border backdrop-blur-md flex items-center gap-1.5 text-[12px] font-medium shadow-lg transition-colors cursor-pointer ${
+              showLabels
+                ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                : 'bg-[#0f172a]/80 border-white/15 text-slate-300 hover:text-white'
+            }`}
+            title="Toggle 3D Anatomical Labels"
+            aria-label="Toggle 3D Labels"
           >
-            <option value="lens">X-Ray Lens (Follows Fingertip)</option>
-            <option value="whole">Whole Head</option>
-            <option value="left">Left Half Only</option>
-            <option value="right">Right Half Only</option>
-            <option value="top">Top Cranium Only</option>
-            <option value="lower">Lower Face Only</option>
-          </select>
+            <Tag className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Labels</span>
+          </button>
         </div>
+      </header>
 
-        <div>
-          <div className="flex justify-between text-[12px] mb-1">
-            <span className="text-[#667482]">Explode Anatomy</span>
-            <span className="font-mono-num">{Math.round(explode * 100)}%</span>
+      {/* Floating Bottom Minimalist Control Dock */}
+      {started && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-24px)] max-w-[560px] pointer-events-none flex flex-col items-center gap-2">
+          <div className="pointer-events-auto w-full rounded-2xl bg-[#0a111e]/85 backdrop-blur-xl border border-white/15 p-2.5 sm:p-3 shadow-2xl text-white transition-all">
+            {/* Top Row: Mode Switch & Reveal Dropdown */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-white/10 border border-white/10">
+                {(['xray', 'solid'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setLook(m)}
+                    className={`rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition-colors cursor-pointer ${
+                      look === m
+                        ? 'bg-sky-500 text-slate-950 shadow-sm'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {m === 'xray' ? 'X-Ray' : 'Solid PBR'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 max-w-[200px]">
+                <select
+                  value={reveal}
+                  onChange={(e) => setReveal(e.target.value as MirrorReveal)}
+                  className="w-full rounded-xl px-2.5 py-1.5 text-[11.5px] font-medium bg-white/10 border border-white/15 text-white focus:outline-none cursor-pointer"
+                >
+                  <option value="whole" className="bg-[#0f172a] text-white">
+                    Whole Head
+                  </option>
+                  <option value="lens" className="bg-[#0f172a] text-white">
+                    X-Ray Lens
+                  </option>
+                  <option value="left" className="bg-[#0f172a] text-white">
+                    Left Half
+                  </option>
+                  <option value="right" className="bg-[#0f172a] text-white">
+                    Right Half
+                  </option>
+                  <option value="top" className="bg-[#0f172a] text-white">
+                    Top Cranium
+                  </option>
+                  <option value="lower" className="bg-[#0f172a] text-white">
+                    Lower Face
+                  </option>
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDockCollapsed((v) => !v)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
+                title={dockCollapsed ? 'Expand controls' : 'Collapse controls'}
+                aria-label={dockCollapsed ? 'Expand controls' : 'Collapse controls'}
+              >
+                {dockCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Expandable Sliders Row */}
+            {!dockCollapsed && (
+              <div className="mt-2.5 pt-2 border-t border-white/10 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-300 w-24 shrink-0">Explode Anatomy</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={explode}
+                    onChange={(e) => setExplode(Number(e.target.value))}
+                    className="w-full atlas-slider"
+                  />
+                  <span className="font-mono-num text-[11px] text-sky-400 w-8 text-right font-medium">
+                    {Math.round(explode * 100)}%
+                  </span>
+                </div>
+
+                {reveal === 'lens' && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-slate-300 w-24 shrink-0">Lens Radius</span>
+                    <input
+                      type="range"
+                      min={0.12}
+                      max={0.55}
+                      step={0.02}
+                      value={lensSize}
+                      onChange={(e) => setLensSize(Number(e.target.value))}
+                      className="w-full atlas-slider"
+                    />
+                    <span className="font-mono-num text-[11px] text-sky-400 w-8 text-right font-medium">
+                      {Math.round(lensSize * 100)}%
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-300 w-24 shrink-0">X-Ray Brightness</span>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={1.8}
+                    step={0.05}
+                    value={brightness}
+                    onChange={(e) => setBrightness(Number(e.target.value))}
+                    className="w-full atlas-slider"
+                  />
+                  <span className="font-mono-num text-[11px] text-sky-400 w-8 text-right font-medium">
+                    {Math.round(brightness * 100)}%
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.02}
-            value={explode}
-            onChange={(e) => setExplode(Number(e.target.value))}
-            className="w-full atlas-slider"
-          />
         </div>
-
-        <div>
-          <div className="flex justify-between text-[12px] mb-1">
-            <span className="text-[#667482]">Lens Size</span>
-            <span className="font-mono-num">{Math.round(lensSize * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0.12}
-            max={0.55}
-            step={0.02}
-            value={lensSize}
-            onChange={(e) => setLensSize(Number(e.target.value))}
-            className="w-full atlas-slider"
-          />
-        </div>
-
-        <div>
-          <div className="flex justify-between text-[12px] mb-1">
-            <span className="text-[#667482]">X-Ray Intensity</span>
-            <span className="font-mono-num">{Math.round(brightness * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min={0.5}
-            max={1.7}
-            step={0.05}
-            value={brightness}
-            onChange={(e) => setBrightness(Number(e.target.value))}
-            className="w-full atlas-slider"
-          />
-        </div>
-
-        <p className="text-[11.5px] text-[#667482] pt-2 border-t border-[#18212b]/10 leading-snug">
-          {status}
-        </p>
-      </div>
+      )}
     </div>
   );
 }

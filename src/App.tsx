@@ -763,25 +763,8 @@ export default function App() {
 
   if (mirrorOpen) {
     return (
-      <div className="relative w-full h-full flex flex-col bg-[#e9edeb] text-[#18212b]">
-        <header className="flex items-center justify-between px-4 h-14 bg-white/95 border-b border-[#18212b]/10 shrink-0">
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-[17px] font-bold tracking-tight">Human Anatomy 3D</h1>
-            <span className="font-mono-num text-[10.5px] font-semibold px-1.5 py-0.5 rounded border border-[#18212b]/15 text-[#52606e]">
-              Live X-Ray Mirror
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMirrorOpen(false)}
-            className="px-3.5 py-1.5 rounded-xl bg-[#1d2733] text-white text-[12.5px] font-semibold hover:bg-[#2a3848] cursor-pointer"
-          >
-            Back to Full-Body 3D
-          </button>
-        </header>
-        <main className="flex-1 min-h-0">
-          <XRayMirrorView onBackToAtlas={() => setMirrorOpen(false)} />
-        </main>
+      <div className="fixed inset-0 w-full h-full overflow-hidden bg-[#070d14]">
+        <XRayMirrorView onBackToAtlas={() => setMirrorOpen(false)} />
       </div>
     );
   }
