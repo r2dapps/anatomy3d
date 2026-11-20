@@ -1,4 +1,4 @@
-import { Cpu, Glasses, Keyboard, X } from 'lucide-react';
+import { Cpu, Database, Glasses, Keyboard, X } from 'lucide-react';
 
 interface AboutModalProps {
   open: boolean;
@@ -123,26 +123,73 @@ export function AboutModal({
           </div>
         </div>
 
-        <div className="pt-3 border-t border-[#18212b]/10 text-[11.5px] text-[#667482] leading-relaxed">
-          Anatomy geometry: <strong>BodyParts3D 4.0</strong> © The Database Center for Life Science (DBCLS), licensed under{' '}
-          <a
-            href="https://creativecommons.org/licenses/by/4.0/"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[#0369a1] hover:underline"
-          >
-            CC BY 4.0
-          </a>
-          . Batched geometry pipeline inspired by{' '}
-          <a
-            href="https://github.com/ashemag/human-atlas"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[#0369a1] hover:underline"
-          >
-            ashemag/human-atlas
-          </a>
-          . Educational reference only — not a diagnostic tool.
+        <div className="pt-3 border-t border-[#18212b]/10 space-y-2 text-[11.5px] text-[#556371] leading-relaxed">
+          <p className="font-semibold uppercase tracking-wider text-[10.5px] text-[#475467] flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5" />
+            <span>Dataset &amp; Open-Source Attributions</span>
+          </p>
+          <ul className="space-y-1.5 pl-1 list-disc list-inside">
+            <li>
+              <strong>BodyParts3D 4.0:</strong> © The Database Center for Life Science (DBCLS), licensed under{' '}
+              <a
+                href="https://creativecommons.org/licenses/by-sa/2.1/jp/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0369a1] hover:underline"
+              >
+                CC BY-SA 2.1 JP
+              </a>{' '}
+              (see{' '}
+              <a
+                href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0369a1] hover:underline"
+              >
+                DBCLS License Policy
+              </a>
+              ).
+            </li>
+            <li>
+              <strong>Atlas Pipeline:</strong> Batched WebGL geometry and atlas architecture inspired by{' '}
+              <a
+                href="https://github.com/ashemag/human-atlas"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0369a1] hover:underline"
+              >
+                ashemag/human-atlas
+              </a>{' '}
+              (MIT License).
+            </li>
+            <li>
+              <strong>Live AR Tracking:</strong> Real-time on-device computer vision landmarks powered by{' '}
+              <a
+                href="https://developers.google.com/mediapipe"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0369a1] hover:underline"
+              >
+                Google MediaPipe
+              </a>{' '}
+              (Apache 2.0).
+            </li>
+            <li>
+              <strong>Rendering Engine:</strong> Real-time 3D WebGL and WebXR stereo pipeline built with{' '}
+              <a
+                href="https://threejs.org/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#0369a1] hover:underline"
+              >
+                Three.js
+              </a>{' '}
+              (MIT License).
+            </li>
+          </ul>
+          <p className="text-[11px] text-[#6b7280] pt-1">
+            Strictly for academic education and anatomical study — not a clinical diagnostic instrument.
+          </p>
         </div>
       </div>
     </div>
